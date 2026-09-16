@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE
+  TEXT
+}
+
+enum QuestionStatus {
+  PENDING
+  ANSWERED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  askedQuestions    Question[] @relation("Asker")
+  answeredQuestions Answer[]   @relation("Responder")
+}
+
+model Question {
+  id             String         @id @default(cuid())
+  type           QuestionType
+  text           String
+  options        String? // JSON-encoded array of up to 5 strings, only for MULTIPLE_CHOICE
+  askerAnswer    String // asker's own answer: option index as string, or free text
+  status         QuestionStatus @default(PENDING)
+  createdAt      DateTime       @default(now())
+
+  askerId String
+  asker   User   @relation("Asker", fields: [askerId], references: [id])
+
+  answer Answer?
+}
+
+model Answer {
+  id          String   @id @default(cuid())
+  value       String // responder's answer: option index as string, or free text
+  createdAt   DateTime @default(now())
+
+  questionId String   @unique
+  question   Question @relation(fields: [questionId], references: [id])
+
+  responderId String
+  responder   User   @relation("Responder", fields: [responderId], references: [id])
+}
+
+// Singleton row (id always "singleton") tracking whose turn it is to ask.
+model GameState {
+  id             String  @id @default("singleton")
+  currentAskerId String?
+}
