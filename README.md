@@ -1,24 +1,29 @@
 # Q&A – Das Spiel zu unserem Podcast
 
-Ein Web-App für zwei Spieler: Ein Spieler stellt eine Frage und beantwortet sie sofort selbst.
+Ein Web-App für Zweier-Runden: Ein Spieler stellt eine Frage und beantwortet sie sofort selbst.
 Der andere Spieler sieht die Frage, aber nicht die Antwort – bis er selbst geantwortet hat.
 Erst dann werden beide Antworten aufgedeckt, und die Rollen wechseln (der Antwortende darf nun
 die nächste Frage stellen).
 
 Fragen können **Multiple Choice** (2–5 Optionen) oder **Freitext** (max. 255 Zeichen) sein.
 
-Die App ist bewusst einfach gehalten: Sie ist für **genau zwei Spieler** (ein Spiel) ausgelegt,
-nicht für viele parallele Spiele oder viele Nutzer.
+Gespielt wird in **privaten Räumen** mit je zwei Personen. Es gibt keine öffentliche Spielerliste:
+Wer sich anmeldet, sieht niemanden außer den Personen, mit denen er selbst einen Raum teilt.
 
 ## Features
 
-- Registrierung mit Benutzername + Passwort (auf maximal 2 Spieler begrenzt)
+- **Private Räume**: Wer einen Raum erstellt, bekommt einen geheimen Einladungslink. Wer ihn
+  öffnet, nimmt den zweiten Platz ein – danach ist der Link verbraucht. Bis zu 5 aktive Räume
+  pro Person, auch mehrere mit derselben Person.
+- **Registrierung nur mit Zugangscode**: Der Admin erzeugt Codes, jeder Code gilt für genau
+  eine Registrierung. Ohne Code kommt niemand hinein.
 - Sicheres Login (Passwort-Hashing mit bcrypt, signierte HttpOnly-Session-Cookies)
 - Abwechselnder Zugzwang: nur der/die Fragende darf fragen, nur der/die andere darf antworten
 - Antwort des Fragenden bleibt verborgen, bis die Gegenseite auch geantwortet hat
 - Zufallsfrage aus einem Fragenkatalog, wahlweise aus den Kategorien **Locker**, **Spicy** und **Tief**
 - Freitext-Reaktionen unter jeder aufgedeckten Runde, damit aus einer Frage ein Gespräch wird
-- Verlauf aller bisherigen Fragen und Antworten
+- **Archivieren**: Fertige Räume wandern ins Archiv, bleiben lesbar und belegen keinen der
+  5 Plätze mehr
 
 ## Tech-Stack
 
@@ -33,7 +38,7 @@ Voraussetzungen: Node.js 20+, eine lokale PostgreSQL-Datenbank.
 ```bash
 npm install
 
-# .env anlegen (siehe .env.example) und DATABASE_URL/SESSION_SECRET setzen
+# .env anlegen (siehe .env.example) und die drei Variablen setzen
 cp .env.example .env
 
 # Schema in die DB übertragen
@@ -42,13 +47,14 @@ npx prisma migrate deploy
 npm run dev
 ```
 
-Die App läuft dann unter <http://localhost:3000>. Der erste registrierte Benutzer beginnt
-als Fragensteller, sobald sich ein zweiter Benutzer registriert hat.
+Die App läuft dann unter <http://localhost:3000>. Registriere dich einmal mit dem
+`ADMIN_SETUP_CODE` aus der `.env` – dieser Account wird zum Admin und kann unter `/admin`
+Zugangscodes für alle weiteren Spieler erzeugen.
 
 ## Kostenlos hosten (Vercel + Neon)
 
 Diese Kombination ist dauerhaft kostenlos (Hobby-Tarif, keine Kreditkarte für Neon nötig) und
-reicht für ein Spiel mit zwei Spielern locker aus.
+reicht für die vorgesehene Größenordnung (rund 20 Räume) locker aus.
 
 ### 1. Datenbank bei Neon anlegen
 
@@ -66,17 +72,19 @@ reicht für ein Spiel mit zwei Spielern locker aus.
    - `DATABASE_URL` = der Connection String von Neon
    - `SESSION_SECRET` = eine lange zufällige Zeichenkette, z. B. erzeugt mit
      `openssl rand -base64 32`
+   - `ADMIN_SETUP_CODE` = ein zufälliger Code, mit dem du dich einmalig als Admin registrierst
 4. Auf **Deploy** klicken.
 
 Beim Build führt `npm run build` automatisch `prisma migrate deploy` aus, wodurch das
 Datenbankschema bei Neon angelegt wird – es sind keine weiteren manuellen Schritte nötig.
 
-### 3. Spielen
+### 3. Einrichten und spielen
 
-1. Die von Vercel vergebene URL öffnen und den ersten Account registrieren.
-2. Die URL an die zweite Person schicken, damit sie sich ebenfalls registriert.
-3. Danach ist die Registrierung automatisch gesperrt (max. 2 Spieler) und das Spiel kann
-   losgehen.
+1. Die von Vercel vergebene URL öffnen und dich mit dem `ADMIN_SETUP_CODE` registrieren.
+   Dieser erste Account ist der Admin; danach funktioniert der Setup-Code nicht mehr.
+2. Unter `/admin` für jede weitere Person einen Zugangscode erzeugen und den fertigen
+   Registrierungslink verschicken.
+3. Auf der Übersicht einen Raum erstellen und den Einladungslink an den Mitspieler schicken.
 
 ### Alternative: Supabase statt Neon
 
@@ -89,12 +97,20 @@ gestartet werden.
 ## Projektstruktur
 
 ```
-prisma/schema.prisma       Datenmodell (User, Question, Answer, GameState)
+prisma/schema.prisma        Datenmodell (User, AccessCode, Room, Question, Answer, Reaction)
 src/lib/auth.ts             Session-Cookies (erstellen/lesen/löschen)
+src/lib/admin.ts            Admin-Prüfung
+src/lib/rooms.ts            Raum-Zugriffsprüfung und Raumlimit
 src/lib/game.ts             Zug-Logik, Sichtbarkeit der Antworten
-src/app/api/auth/*          Registrierung, Login, Logout, aktueller Nutzer
-src/app/api/game/*          Spielstand abrufen, Frage stellen/beantworten, Reaktion schreiben
+src/lib/codes.ts            Erzeugen und Normalisieren von Zugangs-/Einladungscodes
 src/lib/questionCatalog.ts  Fragenkatalog (Locker/Spicy/Tief) inkl. Zufallsziehung
-src/app/login               Login-/Registrierungsseite
-src/app/game                Spielseite (Frage stellen/beantworten, Verlauf)
+src/app/api/auth/*          Registrierung, Login, Logout, aktueller Nutzer
+src/app/api/rooms/*         Räume anlegen/auflisten, Spielzüge, Archivieren, Einladungslink
+src/app/api/invites/*       Einladung ansehen und annehmen
+src/app/api/admin/*         Zugangscodes erzeugen, auflisten, zurückziehen
+src/app/page.tsx            Übersicht der eigenen Räume
+src/app/room/[id]           Spielseite eines Raums
+src/app/join/[code]         Einladung annehmen
+src/app/admin               Zugangscode-Verwaltung
+src/app/login               Login und Registrierung (mit Zugangscode)
 ```

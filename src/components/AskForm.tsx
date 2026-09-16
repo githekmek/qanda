@@ -39,9 +39,11 @@ const CATEGORY_STYLES: Record<QuestionCategory, { active: string; inactive: stri
 };
 
 export default function AskForm({
+  roomId,
   onSubmitted,
   askedQuestions,
 }: {
+  roomId: string;
   onSubmitted: () => void;
   askedQuestions: string[];
 }) {
@@ -113,7 +115,7 @@ export default function AskForm({
 
     setLoading(true);
     try {
-      const res = await fetch("/api/game/ask", {
+      const res = await fetch(`/api/rooms/${roomId}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

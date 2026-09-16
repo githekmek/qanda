@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { findRoomForMember } from "@/lib/rooms";
 import {
-  getOrInitGameState,
   loadQuestionWithRelations,
   serializeQuestionForViewer,
   MAX_OPTIONS,
@@ -35,10 +35,25 @@ const askSchema = z
     }
   });
 
-export async function POST(request: Request) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const room = await findRoomForMember(id, session.userId);
+  if (!room) {
+    return NextResponse.json({ error: "Raum nicht gefunden" }, { status: 404 });
+  }
+  if (room.archivedAt) {
+    return NextResponse.json({ error: "Dieser Raum ist archiviert" }, { status: 409 });
+  }
+  if (!room.playerBId) {
+    return NextResponse.json(
+      { error: "Warte, bis der zweite Spieler dem Raum beigetreten ist" },
+      { status: 400 }
+    );
   }
 
   const body = await request.json().catch(() => null);
@@ -50,15 +65,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const playerCount = await prisma.user.count();
-  if (playerCount < 2) {
-    return NextResponse.json(
-      { error: "Warte, bis sich der zweite Spieler registriert hat" },
-      { status: 400 }
-    );
-  }
-
-  const existingPending = await prisma.question.findFirst({ where: { status: "PENDING" } });
+  const existingPending = await prisma.question.findFirst({
+    where: { roomId: room.id, status: "PENDING" },
+  });
   if (existingPending) {
     return NextResponse.json(
       { error: "Es gibt bereits eine offene Frage, die zuerst beantwortet werden muss" },
@@ -66,8 +75,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const gameState = await getOrInitGameState();
-  if (gameState.currentAskerId !== session.userId) {
+  if (room.currentAskerId !== session.userId) {
     return NextResponse.json({ error: "Du bist nicht am Zug" }, { status: 403 });
   }
 
@@ -75,6 +83,7 @@ export async function POST(request: Request) {
 
   const question = await prisma.question.create({
     data: {
+      roomId: room.id,
       type,
       text,
       options: type === "MULTIPLE_CHOICE" ? JSON.stringify(options) : null,

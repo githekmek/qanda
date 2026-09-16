@@ -38,9 +38,11 @@ function AnswerRow({
 }
 
 function ReactionComposer({
+  roomId,
   questionId,
   onSubmitted,
 }: {
+  roomId: string;
   questionId: string;
   onSubmitted: () => void;
 }) {
@@ -55,7 +57,7 @@ function ReactionComposer({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/game/reaction", {
+      const res = await fetch(`/api/rooms/${roomId}/reaction`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionId, text: text.trim() }),
@@ -99,12 +101,16 @@ function ReactionComposer({
 }
 
 export default function HistoryFeed({
+  roomId,
   history,
   meId,
+  readOnly,
   onReacted,
 }: {
+  roomId: string;
   history: PublicQuestion[];
   meId: string;
+  readOnly: boolean;
   onReacted: () => void;
 }) {
   if (history.length === 0) {
@@ -172,7 +178,9 @@ export default function HistoryFeed({
               </div>
             )}
 
-            <ReactionComposer questionId={q.id} onSubmitted={onReacted} />
+            {!readOnly && (
+              <ReactionComposer roomId={roomId} questionId={q.id} onSubmitted={onReacted} />
+            )}
           </div>
         );
       })}

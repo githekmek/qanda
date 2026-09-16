@@ -23,11 +23,25 @@ export type PublicQuestion = {
   }[];
 };
 
-export type GameStateResponse = {
+export type RoomStateResponse = {
+  room: { id: string; name: string | null; archived: boolean; inviteCode: string | null };
   me: { id: string; username: string };
   opponent: { id: string; username: string } | null;
   isMyTurnToAsk: boolean;
   awaitingMyAnswer: boolean;
   pendingQuestion: PublicQuestion | null;
   history: PublicQuestion[];
+};
+
+export type RoomSummary = {
+  id: string;
+  name: string | null;
+  createdAt: string;
+  archived: boolean;
+  opponent: { id: string; username: string } | null;
+  inviteCode: string | null;
+  lastActivityAt: string;
+  awaitingMyAnswer: boolean;
+  isMyTurnToAsk: boolean;
+  waitingForOpponentAnswer: boolean;
 };

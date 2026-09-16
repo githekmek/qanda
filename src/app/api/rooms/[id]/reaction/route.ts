@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { findRoomForMember } from "@/lib/rooms";
 import {
   loadQuestionWithRelations,
   serializeQuestionForViewer,
@@ -13,10 +14,19 @@ const reactionSchema = z.object({
   text: z.string().trim().min(1).max(MAX_REACTION_LENGTH),
 });
 
-export async function POST(request: Request) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Nicht angemeldet" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const room = await findRoomForMember(id, session.userId);
+  if (!room) {
+    return NextResponse.json({ error: "Raum nicht gefunden" }, { status: 404 });
+  }
+  if (room.archivedAt) {
+    return NextResponse.json({ error: "Dieser Raum ist archiviert" }, { status: 409 });
   }
 
   const body = await request.json().catch(() => null);
@@ -28,7 +38,7 @@ export async function POST(request: Request) {
   const { questionId, text } = parsed.data;
 
   const question = await loadQuestionWithRelations(questionId);
-  if (!question) {
+  if (!question || question.roomId !== room.id) {
     return NextResponse.json({ error: "Frage nicht gefunden" }, { status: 404 });
   }
   if (question.status !== "ANSWERED") {

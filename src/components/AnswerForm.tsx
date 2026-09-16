@@ -6,9 +6,11 @@ import type { PublicQuestion } from "@/types/game";
 const MAX_TEXT_LENGTH = 255;
 
 export default function AnswerForm({
+  roomId,
   question,
   onSubmitted,
 }: {
+  roomId: string;
   question: PublicQuestion;
   onSubmitted: () => void;
 }) {
@@ -38,7 +40,7 @@ export default function AnswerForm({
 
     setLoading(true);
     try {
-      const res = await fetch("/api/game/answer", {
+      const res = await fetch(`/api/rooms/${roomId}/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ questionId: question.id, value }),
