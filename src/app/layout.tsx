@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Q&A Duell",
+  title: "Q&A – Das Spiel zu unserem Podcast",
   description: "Zwei-Spieler Frage-Antwort-Spiel: Stellt euch abwechselnd Fragen und deckt die Antworten gemeinsam auf.",
 };
 

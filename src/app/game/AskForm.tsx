@@ -2,19 +2,46 @@
 
 import { useState } from "react";
 import type { QuestionType } from "@/types/game";
+import {
+  CATEGORIES,
+  CATEGORY_LABELS,
+  drawRandomQuestion,
+  type QuestionCategory,
+} from "@/lib/questionCatalog";
 
 const MAX_OPTIONS = 5;
 const MIN_OPTIONS = 2;
 const MAX_TEXT_LENGTH = 255;
 
-export default function AskForm({ onSubmitted }: { onSubmitted: () => void }) {
-  const [type, setType] = useState<QuestionType>("MULTIPLE_CHOICE");
+export default function AskForm({
+  onSubmitted,
+  askedQuestions,
+}: {
+  onSubmitted: () => void;
+  askedQuestions: string[];
+}) {
+  const [type, setType] = useState<QuestionType>("TEXT");
+  const [categories, setCategories] = useState<QuestionCategory[]>([...CATEGORIES]);
   const [text, setText] = useState("");
   const [options, setOptions] = useState<string[]>(["", ""]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [freeTextAnswer, setFreeTextAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  function toggleCategory(category: QuestionCategory) {
+    setCategories((prev) =>
+      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
+    );
+  }
+
+  function drawQuestion() {
+    const drawn = drawRandomQuestion(categories, askedQuestions);
+    if (drawn) {
+      setText(drawn);
+      setError(null);
+    }
+  }
 
   function updateOption(index: number, value: string) {
     setOptions((prev) => prev.map((o, i) => (i === index ? value : o)));
@@ -118,6 +145,40 @@ export default function AskForm({ onSubmitted }: { onSubmitted: () => void }) {
         >
           Freitext
         </button>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
+        <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+          Keine Idee? Kategorie wählen und würfeln
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {CATEGORIES.map((category) => {
+            const active = categories.includes(category);
+            return (
+              <button
+                key={category}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggleCategory(category)}
+                className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                  active
+                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                    : "border-zinc-300 text-zinc-500 hover:border-zinc-400 dark:border-zinc-700"
+                }`}
+              >
+                {CATEGORY_LABELS[category]}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={drawQuestion}
+            disabled={categories.length === 0}
+            className="ml-auto rounded-lg border border-zinc-300 px-3 py-1 text-sm font-medium text-zinc-700 transition-colors hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Zufallsfrage
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1">

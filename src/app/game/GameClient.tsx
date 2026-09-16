@@ -50,9 +50,10 @@ export default function GameClient({ username }: { username: string }) {
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Q&amp;A Duell</h1>
+          <h1 className="text-xl font-semibold">Q&amp;A</h1>
           <p className="text-sm text-zinc-500">
-            Angemeldet als <span className="font-medium">{username}</span>
+            Das Spiel zu unserem Podcast · angemeldet als{" "}
+            <span className="font-medium">{username}</span>
           </p>
         </div>
         <button
@@ -83,7 +84,13 @@ export default function GameClient({ username }: { username: string }) {
           {state.awaitingMyAnswer && state.pendingQuestion ? (
             <AnswerForm question={state.pendingQuestion} onSubmitted={refresh} />
           ) : state.isMyTurnToAsk ? (
-            <AskForm onSubmitted={refresh} />
+            <AskForm
+              onSubmitted={refresh}
+              askedQuestions={[
+                ...state.history.map((q) => q.text),
+                ...(state.pendingQuestion ? [state.pendingQuestion.text] : []),
+              ]}
+            />
           ) : (
             <div className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700">
               <p className="font-medium">
@@ -101,7 +108,7 @@ export default function GameClient({ username }: { username: string }) {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
               Verlauf
             </h2>
-            <HistoryFeed history={state.history} />
+            <HistoryFeed history={state.history} meId={state.me.id} onReacted={refresh} />
           </section>
         </>
       )}

@@ -1,4 +1,4 @@
-# Q&A Duell
+# Q&A – Das Spiel zu unserem Podcast
 
 Ein Web-App für zwei Spieler: Ein Spieler stellt eine Frage und beantwortet sie sofort selbst.
 Der andere Spieler sieht die Frage, aber nicht die Antwort – bis er selbst geantwortet hat.
@@ -16,6 +16,8 @@ nicht für viele parallele Spiele oder viele Nutzer.
 - Sicheres Login (Passwort-Hashing mit bcrypt, signierte HttpOnly-Session-Cookies)
 - Abwechselnder Zugzwang: nur der/die Fragende darf fragen, nur der/die andere darf antworten
 - Antwort des Fragenden bleibt verborgen, bis die Gegenseite auch geantwortet hat
+- Zufallsfrage aus einem Fragenkatalog, wahlweise aus den Kategorien **Locker**, **Spicy** und **Tief**
+- Freitext-Reaktionen unter jeder aufgedeckten Runde, damit aus einer Frage ein Gespräch wird
 - Verlauf aller bisherigen Fragen und Antworten
 
 ## Tech-Stack
@@ -91,7 +93,8 @@ prisma/schema.prisma       Datenmodell (User, Question, Answer, GameState)
 src/lib/auth.ts             Session-Cookies (erstellen/lesen/löschen)
 src/lib/game.ts             Zug-Logik, Sichtbarkeit der Antworten
 src/app/api/auth/*          Registrierung, Login, Logout, aktueller Nutzer
-src/app/api/game/*          Spielstand abrufen, Frage stellen, Frage beantworten
+src/app/api/game/*          Spielstand abrufen, Frage stellen/beantworten, Reaktion schreiben
+src/lib/questionCatalog.ts  Fragenkatalog (Locker/Spicy/Tief) inkl. Zufallsziehung
 src/app/login               Login-/Registrierungsseite
 src/app/game                Spielseite (Frage stellen/beantworten, Verlauf)
 ```

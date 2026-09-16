@@ -15,6 +15,12 @@ export type PublicQuestion = {
     responder: { id: string; username: string };
   };
   isMatch?: boolean;
+  reactions: {
+    id: string;
+    text: string;
+    createdAt: string;
+    author: { id: string; username: string };
+  }[];
 };
 
 export type GameStateResponse = {

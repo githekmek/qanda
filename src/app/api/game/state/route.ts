@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getOrInitGameState, serializeQuestionForViewer } from "@/lib/game";
+import { getOrInitGameState, questionInclude, serializeQuestionForViewer } from "@/lib/game";
 
 export async function GET() {
   const session = await getSession();
@@ -16,12 +16,12 @@ export async function GET() {
 
   const pending = await prisma.question.findFirst({
     where: { status: "PENDING" },
-    include: { asker: true, answer: { include: { responder: true } } },
+    include: questionInclude,
   });
 
   const historyRaw = await prisma.question.findMany({
     where: { status: "ANSWERED" },
-    include: { asker: true, answer: { include: { responder: true } } },
+    include: questionInclude,
     orderBy: { createdAt: "desc" },
     take: 100,
   });

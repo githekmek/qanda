@@ -25,6 +25,7 @@ model User {
 
   askedQuestions    Question[] @relation("Asker")
   answeredQuestions Answer[]   @relation("Responder")
+  reactions         Reaction[] @relation("ReactionAuthor")
 }
 
 model Question {
@@ -39,7 +40,8 @@ model Question {
   askerId String
   asker   User   @relation("Asker", fields: [askerId], references: [id])
 
-  answer Answer?
+  answer    Answer?
+  reactions Reaction[]
 }
 
 model Answer {
@@ -52,6 +54,19 @@ model Answer {
 
   responderId String
   responder   User   @relation("Responder", fields: [responderId], references: [id])
+}
+
+// Free-text follow-up on a revealed question, so a round can turn into a conversation.
+model Reaction {
+  id        String   @id @default(cuid())
+  text      String
+  createdAt DateTime @default(now())
+
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+
+  authorId String
+  author   User   @relation("ReactionAuthor", fields: [authorId], references: [id])
 }
 
 // Singleton row (id always "singleton") tracking whose turn it is to ask.

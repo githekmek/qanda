@@ -4,6 +4,7 @@ export const MAX_PLAYERS = 2;
 export const MAX_OPTIONS = 5;
 export const MIN_OPTIONS = 2;
 export const MAX_TEXT_LENGTH = 255;
+export const MAX_REACTION_LENGTH = 500;
 
 const GAME_STATE_ID = "singleton";
 
@@ -55,17 +56,26 @@ export type PublicQuestion = {
     responder: { id: string; username: string };
   };
   isMatch?: boolean;
+  reactions: {
+    id: string;
+    text: string;
+    createdAt: string;
+    author: { id: string; username: string };
+  }[];
 };
 
 type QuestionWithRelations = Awaited<ReturnType<typeof loadQuestionWithRelations>>;
 
+export const questionInclude = {
+  asker: true,
+  answer: { include: { responder: true } },
+  reactions: { include: { author: true }, orderBy: { createdAt: "asc" } },
+} as const;
+
 export async function loadQuestionWithRelations(questionId: string) {
   return prisma.question.findUnique({
     where: { id: questionId },
-    include: {
-      asker: true,
-      answer: { include: { responder: true } },
-    },
+    include: questionInclude,
   });
 }
 
@@ -85,6 +95,12 @@ export function serializeQuestionForViewer(
     status: question.status,
     createdAt: question.createdAt.toISOString(),
     asker: { id: question.asker.id, username: question.asker.username },
+    reactions: question.reactions.map((reaction) => ({
+      id: reaction.id,
+      text: reaction.text,
+      createdAt: reaction.createdAt.toISOString(),
+      author: { id: reaction.author.id, username: reaction.author.username },
+    })),
   };
 
   const viewerIsAsker = question.askerId === viewerId;
