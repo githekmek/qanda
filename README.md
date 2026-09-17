@@ -15,8 +15,10 @@ Wer sich anmeldet, sieht niemanden außer den Personen, mit denen er selbst eine
 - **Private Räume**: Wer einen Raum erstellt, bekommt einen geheimen Einladungslink. Wer ihn
   öffnet, nimmt den zweiten Platz ein – danach ist der Link verbraucht. Bis zu 5 aktive Räume
   pro Person, auch mehrere mit derselben Person.
-- **Registrierung nur mit Zugangscode**: Der Admin erzeugt Codes, jeder Code gilt für genau
-  eine Registrierung. Ohne Code kommt niemand hinein.
+- **Zwei Wege hinein, beide eingeladen**: Eingeladene brauchen keinen Zugangscode – sie wählen
+  auf der Einladungsseite direkt Name und Passwort und landen im Raum. Wer ohne Einladung
+  starten will, braucht einen Zugangscode vom Admin. Beides ist geheim und genau einmal
+  einlösbar; ohne das eine oder andere kommt niemand hinein.
 - Sicheres Login (Passwort-Hashing mit bcrypt, signierte HttpOnly-Session-Cookies)
 - Abwechselnder Zugzwang: nur der/die Fragende darf fragen, nur der/die andere darf antworten
 - Antwort des Fragenden bleibt verborgen, bis die Gegenseite auch geantwortet hat
@@ -82,9 +84,10 @@ Datenbankschema bei Neon angelegt wird – es sind keine weiteren manuellen Schr
 
 1. Die von Vercel vergebene URL öffnen und dich mit dem `ADMIN_SETUP_CODE` registrieren.
    Dieser erste Account ist der Admin; danach funktioniert der Setup-Code nicht mehr.
-2. Unter `/admin` für jede weitere Person einen Zugangscode erzeugen und den fertigen
-   Registrierungslink verschicken.
-3. Auf der Übersicht einen Raum erstellen und den Einladungslink an den Mitspieler schicken.
+2. Auf der Übersicht einen Raum erstellen und den Einladungslink an den Mitspieler schicken –
+   der braucht nichts weiter, er wählt beim Öffnen des Links direkt Name und Passwort.
+3. Nur wer ohne Einladung eigene Räume eröffnen soll, braucht einen Zugangscode: unter `/admin`
+   erzeugen und den fertigen Registrierungslink verschicken.
 
 ### Alternative: Supabase statt Neon
 
