@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { QuestionType } from "@/types/game";
 import {
   CATEGORIES,
@@ -13,30 +13,27 @@ const MAX_OPTIONS = 5;
 const MIN_OPTIONS = 2;
 const MAX_TEXT_LENGTH = 255;
 
+// Only the selected state carries colour; unselected stays grey, so the two are
+// told apart by the checkbox, the tint and the text colour at once.
 // Written out in full because Tailwind cannot see dynamically built class names.
-const CATEGORY_STYLES: Record<QuestionCategory, { active: string; inactive: string; dot: string }> = {
+const CATEGORY_STYLES: Record<QuestionCategory, { chip: string; box: string }> = {
   LOCKER: {
-    active:
-      "border-emerald-500 bg-emerald-50 text-emerald-900 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-100",
-    inactive:
-      "border-zinc-300 text-zinc-400 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-500",
-    dot: "bg-emerald-400",
+    chip: "border-emerald-500 bg-emerald-50 text-emerald-900 dark:border-emerald-600 dark:bg-emerald-950 dark:text-emerald-100",
+    box: "border-emerald-500 bg-emerald-500 text-white",
   },
   SPICY: {
-    active:
-      "border-rose-500 bg-rose-50 text-rose-900 dark:border-rose-600 dark:bg-rose-950 dark:text-rose-100",
-    inactive:
-      "border-zinc-300 text-zinc-400 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-500",
-    dot: "bg-rose-400",
+    chip: "border-rose-500 bg-rose-50 text-rose-900 dark:border-rose-600 dark:bg-rose-950 dark:text-rose-100",
+    box: "border-rose-500 bg-rose-500 text-white",
   },
   TIEF: {
-    active:
-      "border-indigo-500 bg-indigo-50 text-indigo-900 dark:border-indigo-600 dark:bg-indigo-950 dark:text-indigo-100",
-    inactive:
-      "border-zinc-300 text-zinc-400 hover:border-zinc-400 dark:border-zinc-700 dark:text-zinc-500",
-    dot: "bg-indigo-400",
+    chip: "border-indigo-500 bg-indigo-50 text-indigo-900 dark:border-indigo-600 dark:bg-indigo-950 dark:text-indigo-100",
+    box: "border-indigo-500 bg-indigo-500 text-white",
   },
 };
+
+const INACTIVE_CHIP =
+  "border-zinc-300 bg-white text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:bg-transparent dark:text-zinc-400";
+const INACTIVE_BOX = "border-zinc-400 bg-white dark:border-zinc-500 dark:bg-transparent";
 
 export default function AskForm({
   roomId,
@@ -55,6 +52,7 @@ export default function AskForm({
   const [freeTextAnswer, setFreeTextAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const questionFieldRef = useRef<HTMLTextAreaElement>(null);
 
   function toggleCategory(category: QuestionCategory) {
     setCategories((prev) =>
@@ -64,10 +62,13 @@ export default function AskForm({
 
   function drawQuestion() {
     const drawn = drawRandomQuestion(categories, askedQuestions);
-    if (drawn) {
-      setText(drawn);
-      setError(null);
-    }
+    if (!drawn) return;
+
+    setText(drawn);
+    setError(null);
+    // The button sits below the fields it fills, so point the eye back up there.
+    questionFieldRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    questionFieldRef.current?.focus();
   }
 
   function updateOption(index: number, value: string) {
@@ -174,55 +175,13 @@ export default function AskForm({
         </button>
       </div>
 
-      <fieldset className="flex flex-col gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-900">
-        <legend className="px-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Kategorien
-        </legend>
-        <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((category) => {
-            const active = categories.includes(category);
-            const style = CATEGORY_STYLES[category];
-            return (
-              <label
-                key={category}
-                className={`flex cursor-pointer select-none items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors focus-within:ring-2 focus-within:ring-zinc-400 ${
-                  active ? style.active : style.inactive
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  className="sr-only"
-                  checked={active}
-                  onChange={() => toggleCategory(category)}
-                />
-                <span aria-hidden className="flex h-4 w-4 items-center justify-center">
-                  {active ? (
-                    <span className="text-xs leading-none">✓</span>
-                  ) : (
-                    <span className={`h-2 w-2 rounded-full ${style.dot}`} />
-                  )}
-                </span>
-                {CATEGORY_LABELS[category]}
-              </label>
-            );
-          })}
-        </div>
-        <button
-          type="button"
-          onClick={drawQuestion}
-          disabled={categories.length === 0}
-          className="rounded-lg bg-zinc-900 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-        >
-          {categories.length === 0 ? "Wähle mindestens eine Kategorie" : "Zufallsfrage einsetzen"}
-        </button>
-      </fieldset>
-
       <div className="flex flex-col gap-1">
         <label htmlFor="question-text" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
           Deine Frage
         </label>
         <textarea
           id="question-text"
+          ref={questionFieldRef}
           required
           maxLength={MAX_TEXT_LENGTH}
           value={text}
@@ -298,6 +257,64 @@ export default function AskForm({
           </span>
         </div>
       )}
+
+      <fieldset className="flex flex-col gap-3 rounded-xl bg-zinc-50 p-4 dark:bg-zinc-900">
+        <legend className="sr-only">Zufallsfrage</legend>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          Keine Idee? Lass dir eine Frage vorschlagen.
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          {CATEGORIES.map((category) => {
+            const active = categories.includes(category);
+            const style = CATEGORY_STYLES[category];
+            return (
+              <label
+                key={category}
+                className={`flex cursor-pointer select-none items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors focus-within:ring-2 focus-within:ring-zinc-400 ${
+                  active ? style.chip : INACTIVE_CHIP
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={active}
+                  onChange={() => toggleCategory(category)}
+                />
+                <span
+                  aria-hidden
+                  className={`flex h-4 w-4 items-center justify-center rounded-sm border-2 transition-colors ${
+                    active ? style.box : INACTIVE_BOX
+                  }`}
+                >
+                  {active && (
+                    <svg viewBox="0 0 12 12" className="h-3 w-3">
+                      <path
+                        d="M2.5 6.2 L4.7 8.5 L9.5 3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </span>
+                {CATEGORY_LABELS[category]}
+              </label>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={drawQuestion}
+          disabled={categories.length === 0}
+          className="rounded-lg border border-zinc-300 bg-white py-2 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-transparent dark:text-zinc-200 dark:hover:bg-zinc-800"
+        >
+          {categories.length === 0 ? "Wähle mindestens eine Kategorie" : "Zufallsfrage einsetzen"}
+        </button>
+      </fieldset>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
