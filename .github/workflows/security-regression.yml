@@ -1,0 +1,40 @@
+name: Security regression
+on:
+  push:
+    branches: [main, "codex/security-fixes-*"]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: qanda
+          POSTGRES_PASSWORD: local-test-only
+          POSTGRES_DB: qanda_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qanda -d qanda_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://qanda:local-test-only@127.0.0.1:5432/qanda_test?schema=public
+      SESSION_SECRET: isolated-ci-secret-not-used-in-production-123456789
+      ADMIN_SETUP_CODE: isolated-ci-admin-setup
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:unit
+      - run: npm run test:migrations
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test:integration

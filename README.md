@@ -44,7 +44,7 @@ npm install
 cp .env.example .env
 
 # Schema in die DB übertragen
-npx prisma migrate deploy
+npm run db:deploy
 
 npm run dev
 ```
@@ -77,7 +77,7 @@ reicht für die vorgesehene Größenordnung (rund 20 Räume) locker aus.
    - `ADMIN_SETUP_CODE` = ein zufälliger Code, mit dem du dich einmalig als Admin registrierst
 4. Auf **Deploy** klicken.
 
-Beim Build führt `npm run build` automatisch `prisma migrate deploy` aus, wodurch das
+Beim Build führt `npm run build` automatisch den geschützten Befehl `npm run db:deploy` aus, wodurch das
 Datenbankschema bei Neon angelegt wird – es sind keine weiteren manuellen Schritte nötig.
 
 ### 3. Einrichten und spielen
@@ -117,3 +117,48 @@ src/app/join/[code]         Einladung annehmen
 src/app/admin               Zugangscode-Verwaltung
 src/app/login               Login und Registrierung (mit Zugangscode)
 ```
+
+## Sicherheitskorrekturen und bestehende Daten
+
+Bestehende Passwörter, Session-Cookies, Nutzer-IDs, Räume, Einladungen und Antworten
+bleiben gültig. Die neue Migration legt ausschließlich `LoginRateLimit` an.
+Neue Konten benötigen mindestens 12 Zeichen (höchstens 72 UTF-8-Bytes);
+bestehende Nutzer müssen ihr Passwort nicht ändern.
+
+Die Anmeldung erlaubt 10 Versuche pro Benutzername in 15 Minuten. Auf Vercel
+gelten zusätzlich 100 Versuche pro IP, anhand des von Vercel gesetzten Headers
+`x-vercel-forwarded-for`. Bei anderem Hosting IP-Drosselung am vertrauenswürdigen
+Reverse Proxy konfigurieren. Ein HTTP 429 enthält die Wartezeit in `Retry-After`.
+
+Datenbankänderungen nur mit `npm run db:deploy` bzw. `npm run build` ausführen.
+Historische Migrationen bleiben unverändert, damit bereits angewendete
+Migrationsstände weiterhin passen. Der Schutz verweigert die alte Löschmigration,
+falls sie noch offen ist und Bestandsdaten vorhanden sind. Er setzt keine
+Datenbank zurück und markiert keine Migration ohne Ausführung als erledigt.
+Bei diesem Stopp bleibt die bisherige App unverändert; die alte Einzelspiel-
+Datenbank benötigt vor dem Upgrade einen gesonderten datenerhaltenden Übernahmeplan.
+Vor Produktivmigrationen einen Datenbank-Snapshot beim Hostinganbieter erstellen.
+Vercel-Vorschau-Builds führen keine Datenbankmigrationen aus.
+
+Bereits durch frühere Versionen entstandene zusätzliche Räume oder offene
+Fragen werden nicht gelöscht. Neue Spielzüge sind durch serialisierbare
+Transaktionen mit begrenzten Wiederholungsversuchen abgesichert.
+
+## Regressionstests
+
+GitHub Actions verwendet eine eigene PostgreSQL-Testdatenbank, keine Produktivdaten
+oder Repository-Secrets. Lokal mit einer separaten lokalen Testdatenbank:
+
+```bash
+npm ci
+npm run test:unit
+npm run test:migrations
+npm run lint
+npm run build
+npm run test:integration
+```
+
+Datenbanktests akzeptieren nur PostgreSQL auf localhost/127.0.0.1 und verwenden
+eigene, anschließend entfernte Testschemas. Geprüft werden Neuinstallation,
+datenerhaltendes Upgrade, Schutz alter Datenbanken, parallele Spielzüge,
+atomare Registrierung, Einladungserneuerung, Raumlimits und bisherige Logins.
