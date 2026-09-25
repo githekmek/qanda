@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 export const MAX_OPTIONS = 5;
@@ -37,8 +38,8 @@ export const questionInclude = {
   reactions: { include: { author: true }, orderBy: { createdAt: "asc" } },
 } as const;
 
-export async function loadQuestionWithRelations(questionId: string) {
-  return prisma.question.findUnique({
+export async function loadQuestionWithRelations(questionId: string, db: Prisma.TransactionClient = prisma) {
+  return db.question.findUnique({
     where: { id: questionId },
     include: questionInclude,
   });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { serializable, mutationError } from "@/lib/transaction";
 import { generateInviteCode } from "@/lib/codes";
 import { countActiveRooms, MAX_ROOMS_PER_USER } from "@/lib/rooms";
 
@@ -68,23 +69,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Ungültiger Raumname" }, { status: 400 });
   }
 
-  if ((await countActiveRooms(session.userId)) >= MAX_ROOMS_PER_USER) {
-    return NextResponse.json(
-      {
-        error: `Du bist bereits in ${MAX_ROOMS_PER_USER} aktiven Räumen. Archiviere einen, um Platz zu schaffen.`,
-      },
-      { status: 409 }
-    );
+  try {
+    return await serializable(async (tx) => {
+
+      if ((await countActiveRooms(session.userId, tx)) >= MAX_ROOMS_PER_USER) {
+        return NextResponse.json(
+          {
+            error: `Du bist bereits in ${MAX_ROOMS_PER_USER} aktiven Räumen. Archiviere einen, um Platz zu schaffen.`,
+          },
+          { status: 409 }
+        );
+      }
+
+      const room = await tx.room.create({
+        data: {
+          name: parsed.data.name || null,
+          inviteCode: generateInviteCode(),
+          playerAId: session.userId,
+          currentAskerId: session.userId,
+        },
+      });
+
+      return NextResponse.json({ id: room.id, inviteCode: room.inviteCode });
+    });
+  } catch (error) {
+    return mutationError(error);
   }
-
-  const room = await prisma.room.create({
-    data: {
-      name: parsed.data.name || null,
-      inviteCode: generateInviteCode(),
-      playerAId: session.userId,
-      currentAskerId: session.userId,
-    },
-  });
-
-  return NextResponse.json({ id: room.id, inviteCode: room.inviteCode });
 }

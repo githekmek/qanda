@@ -112,3 +112,10 @@ model Reaction {
   authorId String
   author   User   @relation("ReactionAuthor", fields: [authorId], references: [id])
 }
+
+model LoginRateLimit {
+  key       String   @id
+  attempts  Int
+  expiresAt DateTime
+  @@index([expiresAt])
+}

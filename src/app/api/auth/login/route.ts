@@ -3,10 +3,11 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { createSessionCookie } from "@/lib/auth";
+import { limitLogin } from "@/lib/loginRateLimit";
 
 const loginSchema = z.object({
-  username: z.string().trim().min(1),
-  password: z.string().min(1),
+  username: z.string().trim().min(1).max(32),
+  password: z.string().min(1).max(200),
 });
 
 export async function POST(request: Request) {
@@ -18,6 +19,9 @@ export async function POST(request: Request) {
   }
 
   const { username, password } = parsed.data;
+
+  const limited = await limitLogin(request, username);
+  if (limited) return limited;
 
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) {

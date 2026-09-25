@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 export const MAX_ROOMS_PER_USER = 5;
@@ -9,8 +10,8 @@ export type RoomWithPlayers = NonNullable<Awaited<ReturnType<typeof findRoomForM
  * room-scoped endpoint goes through here, so a stranger holding a room id
  * can never read the questions or answers inside it.
  */
-export async function findRoomForMember(roomId: string, userId: string) {
-  const room = await prisma.room.findFirst({
+export async function findRoomForMember(roomId: string, userId: string, db: Prisma.TransactionClient = prisma) {
+  const room = await db.room.findFirst({
     where: {
       id: roomId,
       OR: [{ playerAId: userId }, { playerBId: userId }],
@@ -26,8 +27,8 @@ export function opponentOf(room: RoomWithPlayers, userId: string) {
 }
 
 /** Archived rooms stay readable but no longer occupy one of the player's slots. */
-export async function countActiveRooms(userId: string) {
-  return prisma.room.count({
+export async function countActiveRooms(userId: string, db: Prisma.TransactionClient = prisma) {
+  return db.room.count({
     where: {
       archivedAt: null,
       OR: [{ playerAId: userId }, { playerBId: userId }],

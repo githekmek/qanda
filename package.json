@@ -4,10 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma migrate deploy && next build",
+    "build": "node scripts/build.mjs",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:deploy": "node scripts/migrate-deploy.mjs",
+    "test:unit": "node --test tests/redirect.test.mjs",
+    "test:migrations": "node --test tests/migrations.test.mjs",
+    "test:integration": "node --test tests/integration.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

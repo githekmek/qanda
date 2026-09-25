@@ -2,14 +2,15 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { formatAccessCode } from "@/lib/codes";
+import { formatAccessCode } from "@/lib/codeFormat";
+import { safeRedirect } from "@/lib/safeRedirect.mjs";
 
 type Mode = "login" | "register";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
+  const next = safeRedirect(searchParams.get("next"));
   const codeFromUrl = searchParams.get("code");
 
   const [mode, setMode] = useState<Mode>(codeFromUrl ? "register" : "login");
