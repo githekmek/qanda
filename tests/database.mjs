@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 const require = createRequire(import.meta.url);
-export const prismaCli = require.resolve("prisma");
+export const prismaCli = require.resolve("prisma/build/index.js");
 
 export function command(args, url) {
   return spawnSync(process.execPath, args, {

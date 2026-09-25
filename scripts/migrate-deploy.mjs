@@ -34,7 +34,7 @@ try {
 } finally {
   await db.$disconnect();
 }
-const result = spawnSync(process.execPath, [require.resolve("prisma"), "migrate", "deploy"], {
+const result = spawnSync(process.execPath, [require.resolve("prisma/build/index.js"), "migrate", "deploy"], {
   stdio: "inherit", env: process.env,
 });
 if (result.error) throw result.error;

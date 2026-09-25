@@ -33,6 +33,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Dependency audit
+        run: npm audit --json
+        continue-on-error: true
       - run: npm run test:unit
       - run: npm run test:migrations
       - run: npm run lint
