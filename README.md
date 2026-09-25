@@ -162,3 +162,9 @@ Datenbanktests akzeptieren nur PostgreSQL auf localhost/127.0.0.1 und verwenden
 eigene, anschließend entfernte Testschemas. Geprüft werden Neuinstallation,
 datenerhaltendes Upgrade, Schutz alter Datenbanken, parallele Spielzüge,
 atomare Registrierung, Einladungserneuerung, Raumlimits und bisherige Logins.
+
+Die Abhängigkeiten enthalten Next.js 16.3.6 (Sicherheitspatch) und eine gezielte
+Überschreibung von `@prisma/config` → `deepmerge-ts` auf 8.0.2 gegen
+GHSA-ggr8-5vv4-36mx. Prisma bleibt auf der bisherigen 6.x-Version; die
+Migrationstests prüfen die Kompatibilität. Die Überschreibung kann entfallen,
+sobald die verwendete Prisma-Version selbst eine korrigierte Abhängigkeit enthält.
