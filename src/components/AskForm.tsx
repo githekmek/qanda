@@ -184,8 +184,8 @@ export default function AskForm({
           <legend className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Antwortmodus</legend>
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
             {[false, true].map((mode) => (
-              <label key={String(mode)} className={`cursor-pointer rounded-md px-2 py-2 text-center text-sm font-medium focus-within:ring-2 focus-within:ring-zinc-400 ${multiple === mode ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-500"}`}>
-                <input className="sr-only" type="radio" name="answer-mode" checked={multiple === mode} onChange={() => { setMultiple(mode); setError(null); }} />
+              <label key={String(mode)} className={`relative cursor-pointer rounded-md px-2 py-2 text-center text-sm font-medium focus-within:ring-2 focus-within:ring-zinc-400 ${multiple === mode ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-500"}`}>
+                <input className="absolute inset-0 h-full w-full cursor-pointer opacity-0" type="radio" name="answer-mode" checked={multiple === mode} onChange={() => { setMultiple(mode); setError(null); }} />
                 {mode ? "Mehrere Antworten" : "Eine Antwort"}
               </label>
             ))}
