@@ -48,6 +48,8 @@ export default function AskForm({
   const [categories, setCategories] = useState<QuestionCategory[]>([...CATEGORIES]);
   const [text, setText] = useState("");
   const [options, setOptions] = useState<string[]>(["", ""]);
+  const [multiple, setMultiple] = useState(false);
+  const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [freeTextAnswer, setFreeTextAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +83,7 @@ export default function AskForm({
 
   function removeOption(index: number) {
     setOptions((prev) => prev.filter((_, i) => i !== index));
+    setSelectedOptions((prev) => prev.filter((i) => i !== index).map((i) => i > index ? i - 1 : i));
     setSelectedOption((prev) => (prev === index ? null : prev !== null && prev > index ? prev - 1 : prev));
   }
 
@@ -101,11 +104,11 @@ export default function AskForm({
         setError("Bitte alle Optionen ausfüllen");
         return;
       }
-      if (selectedOption === null) {
+      if (multiple ? selectedOptions.length === 0 : selectedOption === null) {
         setError("Bitte deine eigene Antwort auswählen");
         return;
       }
-      askerAnswer = String(selectedOption);
+      askerAnswer = multiple ? JSON.stringify([...selectedOptions].sort((a, b) => a - b)) : String(selectedOption);
     } else {
       if (!freeTextAnswer.trim()) {
         setError("Bitte deine eigene Antwort eingeben");
@@ -120,7 +123,7 @@ export default function AskForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type,
+          type: type === "MULTIPLE_CHOICE" && multiple ? "MULTIPLE_SELECT" : type,
           text: text.trim(),
           options: type === "MULTIPLE_CHOICE" ? trimmedOptions : undefined,
           askerAnswer,
@@ -134,6 +137,7 @@ export default function AskForm({
       setText("");
       setOptions(["", ""]);
       setSelectedOption(null);
+      setSelectedOptions([]);
       setFreeTextAnswer("");
       onSubmitted();
     } catch {
@@ -175,6 +179,20 @@ export default function AskForm({
         </button>
       </div>
 
+      {type === "MULTIPLE_CHOICE" && (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Antwortmodus</legend>
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
+            {[false, true].map((mode) => (
+              <label key={String(mode)} className={`cursor-pointer rounded-md px-2 py-2 text-center text-sm font-medium focus-within:ring-2 focus-within:ring-zinc-400 ${multiple === mode ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-500"}`}>
+                <input className="sr-only" type="radio" name="answer-mode" checked={multiple === mode} onChange={() => { setMultiple(mode); setError(null); }} />
+                {mode ? "Mehrere Antworten" : "Eine Antwort"}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
       <div className="flex flex-col gap-1">
         <label htmlFor="question-text" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
           Deine Frage
@@ -197,15 +215,19 @@ export default function AskForm({
       {type === "MULTIPLE_CHOICE" ? (
         <div className="flex flex-col gap-2">
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Optionen (max. {MAX_OPTIONS}) – wähle auch deine eigene Antwort
+            Optionen (max. {MAX_OPTIONS}) – {multiple ? "wähle deine eigenen Antworten" : "wähle auch deine eigene Antwort"}
           </span>
+          <p className="text-xs text-zinc-500">{multiple ? "Wähle eine oder mehrere Antworten." : "Wähle genau eine Antwort."}</p>
           {options.map((option, index) => (
             <div key={index} className="flex items-center gap-2">
               <input
-                type="radio"
+                type={multiple ? "checkbox" : "radio"}
                 name="asker-answer"
-                checked={selectedOption === index}
-                onChange={() => setSelectedOption(index)}
+                className="h-4 w-4 shrink-0 accent-zinc-900 dark:accent-zinc-100"
+                checked={multiple ? selectedOptions.includes(index) : selectedOption === index}
+                onChange={() => multiple
+                  ? setSelectedOptions((prev) => prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index])
+                  : setSelectedOption(index)}
                 aria-label={`Option ${index + 1} als eigene Antwort auswählen`}
               />
               <input
@@ -214,7 +236,8 @@ export default function AskForm({
                 maxLength={100}
                 onChange={(e) => updateOption(index, e.target.value)}
                 placeholder={`Option ${index + 1}`}
-                className="flex-1 rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+                aria-label={`Option ${index + 1}`}
+                className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
               />
               {options.length > MIN_OPTIONS && (
                 <button

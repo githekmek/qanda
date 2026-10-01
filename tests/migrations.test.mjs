@@ -9,9 +9,10 @@ const oldMigrations = [
   "20250101000000_init",
   "20250102000000_add_reactions",
   "20250103000000_rooms_and_access_codes",
+  "20260925000000_login_rate_limit",
 ];
 
-async function installOld(url, count = 3) {
+async function installOld(url, count = 4) {
   const dir = await mkdtemp(join(tmpdir(), "qanda-migrations-"));
   try {
     await mkdir(join(dir, "migrations"));
@@ -60,6 +61,20 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       roomId: room.id, askerId: b.id, type: "TEXT", text: "Offene Frage", askerAnswer: "Noch geheim",
     } });
     await db.accessCode.create({ data: { code: "EXISTING", createdById: a.id } });
+    const singleRoom = await db.room.create({ data: {
+      name: "Offenes Multiple Choice", inviteCode: "PENDINGMC", playerAId: a.id,
+      playerBId: b.id, currentAskerId: a.id,
+    } });
+    await db.question.create({ data: {
+      roomId: singleRoom.id, askerId: a.id, type: "MULTIPLE_CHOICE",
+      text: "Offene Einfachauswahl", options: '["Alt A","Alt B"]', askerAnswer: "1",
+    } });
+    const completed = await db.question.create({ data: {
+      roomId: singleRoom.id, askerId: b.id, type: "MULTIPLE_CHOICE",
+      text: "Alte Einfachauswahl", options: '["A","B"]', askerAnswer: "0", status: "ANSWERED",
+    } });
+    await db.answer.create({ data: { questionId: completed.id, responderId: a.id, value: "1" } });
+
     async function snapshot() {
       const result = {};
       for (const model of ["user", "room", "question", "answer", "reaction", "accessCode"]) {
@@ -73,6 +88,11 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     assert.equal(await db.loginRateLimit.count(), 0);
     succeeded(command(["scripts/migrate-deploy.mjs"], ctx.url));
     assert.deepEqual(await snapshot(), before, "re-running deployment must also preserve data");
+    const newQuestion = await db.question.create({ data: {
+      roomId: room.id, askerId: a.id, type: "MULTIPLE_SELECT", text: "Neu",
+      options: '["A","B"]', askerAnswer: "[0,1]",
+    } });
+    assert.equal(newQuestion.type, "MULTIPLE_SELECT");
   } finally { await ctx.close(); }
 });
 

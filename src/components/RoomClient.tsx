@@ -139,7 +139,7 @@ export default function RoomClient({ roomId, origin }: { roomId: string; origin:
       ) : (
         <>
           {state.awaitingMyAnswer && state.pendingQuestion ? (
-            <AnswerForm roomId={roomId} question={state.pendingQuestion} onSubmitted={refresh} />
+            <AnswerForm key={state.pendingQuestion.id} roomId={roomId} question={state.pendingQuestion} onSubmitted={refresh} />
           ) : state.isMyTurnToAsk ? (
             <AskForm
               roomId={roomId}

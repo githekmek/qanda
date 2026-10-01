@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { parseMultipleAnswer } from "@/lib/choiceAnswers.mjs";
 import { getSession } from "@/lib/auth";
 import { serializable, mutationError } from "@/lib/transaction";
 import { findRoomForMember } from "@/lib/rooms";
@@ -13,7 +14,7 @@ import {
 
 const askSchema = z
   .object({
-    type: z.enum(["MULTIPLE_CHOICE", "TEXT"]),
+    type: z.enum(["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TEXT"]),
     text: z.string().trim().min(1, "Frage darf nicht leer sein").max(MAX_TEXT_LENGTH),
     options: z
       .array(z.string().trim().min(1).max(100))
@@ -23,9 +24,15 @@ const askSchema = z
     askerAnswer: z.string().trim().min(1).max(MAX_TEXT_LENGTH),
   })
   .superRefine((data, ctx) => {
-    if (data.type === "MULTIPLE_CHOICE") {
+    if (data.type !== "TEXT") {
       if (!data.options) {
         ctx.addIssue({ code: "custom", message: "Multiple-Choice-Fragen benötigen Optionen" });
+        return;
+      }
+      if (data.type === "MULTIPLE_SELECT") {
+        if (!parseMultipleAnswer(data.askerAnswer, data.options.length)) {
+          ctx.addIssue({ code: "custom", message: "Bitte mindestens eine gültige Antwortoption ohne Duplikate auswählen" });
+        }
         return;
       }
       const index = Number(data.askerAnswer);
@@ -88,8 +95,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           roomId: room.id,
           type,
           text,
-          options: type === "MULTIPLE_CHOICE" ? JSON.stringify(options) : null,
-          askerAnswer,
+          options: type !== "TEXT" ? JSON.stringify(options) : null,
+          askerAnswer: type === "MULTIPLE_SELECT"
+            ? JSON.stringify(parseMultipleAnswer(askerAnswer, options!.length))
+            : askerAnswer,
           askerId: session.userId,
         },
       });

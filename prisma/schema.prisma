@@ -9,6 +9,7 @@ datasource db {
 
 enum QuestionType {
   MULTIPLE_CHOICE
+  MULTIPLE_SELECT
   TEXT
 }
 
@@ -73,8 +74,8 @@ model Question {
   id          String         @id @default(cuid())
   type        QuestionType
   text        String
-  options     String? // JSON-encoded array of up to 5 strings, only for MULTIPLE_CHOICE
-  askerAnswer String // asker's own answer: option index as string, or free text
+  options     String? // JSON-encoded array of up to 5 strings, for choice questions
+  askerAnswer String // asker's own answer: option index, JSON index array for MULTIPLE_SELECT, or free text
   status      QuestionStatus @default(PENDING)
   createdAt   DateTime       @default(now())
 
@@ -90,7 +91,7 @@ model Question {
 
 model Answer {
   id        String   @id @default(cuid())
-  value     String // responder's answer: option index as string, or free text
+  value     String // responder's answer: option index, JSON index array for MULTIPLE_SELECT, or free text
   createdAt DateTime @default(now())
 
   questionId String   @unique

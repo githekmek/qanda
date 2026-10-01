@@ -9,7 +9,7 @@
     "lint": "eslint",
     "postinstall": "prisma generate",
     "db:deploy": "node scripts/migrate-deploy.mjs",
-    "test:unit": "node --test tests/redirect.test.mjs",
+    "test:unit": "node --test tests/redirect.test.mjs tests/choiceAnswers.test.mjs",
     "test:migrations": "node --test tests/migrations.test.mjs",
     "test:integration": "node --test tests/integration.test.mjs"
   },

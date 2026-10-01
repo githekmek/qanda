@@ -1,4 +1,4 @@
-export type QuestionType = "MULTIPLE_CHOICE" | "TEXT";
+export type QuestionType = "MULTIPLE_CHOICE" | "MULTIPLE_SELECT" | "TEXT";
 
 export type PublicQuestion = {
   id: string;

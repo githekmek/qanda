@@ -244,4 +244,153 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.equal(results.filter((r) => r.status === 200).length, 1);
     assert.equal(await db.room.count({ where: { playerAId: a.id, archivedAt: null } }), 5);
   });
+  await t.test("multiple choice sets stay private, match regardless of order and advance the turn", async () => {
+    const a = await user(), b = await user(), r = await room(a, b);
+    const asked = await request("/api/rooms/" + r.id + "/ask", {
+      actor: a, data: { type: "MULTIPLE_SELECT", text: "Weekend?", options: ["A","B","C"], askerAnswer: "[2,0]" },
+    });
+    assert.equal(asked.status, 200, JSON.stringify(asked));
+    assert.equal(asked.body.askerAnswer, "[0,2]");
+    const pending = await request("/api/rooms/" + r.id + "/state", { actor: b, method: "GET" });
+    assert.equal(pending.body.pendingQuestion.type, "MULTIPLE_SELECT");
+    assert.equal(pending.body.pendingQuestion.askerAnswer, undefined);
+    assert.equal(pending.body.pendingQuestion.isMatch, undefined);
+    for (const value of ["[]", "[0,0]", "[3]", '["0"]', "[1.5]", "[true]", "0", "{}"]) {
+      assert.equal((await request("/api/rooms/" + r.id + "/answer", { actor: b, data: { questionId: asked.body.id, value } })).status, 400, value);
+      assert.equal(await db.answer.count({ where: { questionId: asked.body.id } }), 0);
+      assert.equal((await db.question.findUnique({ where: { id: asked.body.id } })).status, "PENDING");
+    }
+    const answered = await request("/api/rooms/" + r.id + "/answer", { actor: b, data: { questionId: asked.body.id, value: "[2,0]" } });
+    assert.equal(answered.status, 200);
+    assert.equal(answered.body.isMatch, true);
+    assert.equal(answered.body.answer.value, "[0,2]");
+    assert.equal((await db.room.findUnique({ where: { id: r.id } })).currentAskerId, b.id);
+    const next = await request("/api/rooms/" + r.id + "/ask", {
+      actor: b, data: { type: "MULTIPLE_SELECT", text: "Next", options: ["A","B"], askerAnswer: "[0,1]" },
+    });
+    assert.equal(next.status, 200);
+    const different = await request("/api/rooms/" + r.id + "/answer", { actor: a, data: { questionId: next.body.id, value: "[0]" } });
+    assert.equal(different.status, 200);
+    assert.equal(different.body.isMatch, false);
+  });
+
+  await t.test("invalid multi-select questions do not write data", async () => {
+    const a = await user(), b = await user(), r = await room(a, b);
+    for (const askerAnswer of ["[]", "[0,0]", "[2]", "1", "null", "[false]", "[0.5]", '["0"]']) {
+      assert.equal((await request("/api/rooms/" + r.id + "/ask", {
+        actor: a, data: { type: "MULTIPLE_SELECT", text: "Invalid", options: ["A","B"], askerAnswer },
+      })).status, 400, askerAnswer);
+    }
+    for (const options of [undefined, ["A"], ["A","B","C","D","E","F"], ["A",""]]) {
+      assert.equal((await request("/api/rooms/" + r.id + "/ask", {
+        actor: a, data: { type: "MULTIPLE_SELECT", text: "Invalid", options, askerAnswer: "[0]" },
+      })).status, 400);
+    }
+    assert.equal(await db.question.count({ where: { roomId: r.id } }), 0);
+  });
+
+  await t.test("existing pending single-choice and text rounds remain playable without rewriting history", async () => {
+    const a = await user(), b = await user();
+    for (const type of ["MULTIPLE_CHOICE", "TEXT"]) {
+      const r = await room(a, b);
+      const q = await db.question.create({ data: {
+        roomId: r.id, askerId: a.id, type, text: "Existing open game",
+        options: type === "MULTIPLE_CHOICE" ? '["A","B"]' : null,
+        askerAnswer: type === "MULTIPLE_CHOICE" ? "1" : "Original",
+      } });
+      const before = await db.question.findUnique({ where: { id: q.id } });
+      const pending = await request("/api/rooms/" + r.id + "/state", { actor: b, method: "GET" });
+      assert.equal(pending.body.pendingQuestion.type, type);
+      assert.equal(pending.body.pendingQuestion.askerAnswer, undefined);
+      const answered = await request("/api/rooms/" + r.id + "/answer", {
+        actor: b, data: { questionId: q.id, value: q.askerAnswer },
+      });
+      assert.equal(answered.status, 200);
+      assert.equal(answered.body.isMatch, true);
+      const after = await db.question.findUnique({ where: { id: q.id } });
+      assert.deepEqual(after, { ...before, status: "ANSWERED" });
+      assert.equal((await db.room.findUnique({ where: { id: r.id } })).inviteCode, r.inviteCode);
+    }
+  });
+
+  await t.test("browser: mobile creation, mode switching, removal, multiple answers and legacy radios", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const { mkdir } = await import("node:fs/promises");
+    const browser = await chromium.launch();
+    try {
+      const a = await user(), b = await user(), r = await room(a, b);
+      const ca = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const cb = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await ca.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      await cb.addCookies([{ name: "qanda_session", value: (await cookie(b)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const pa = await ca.newPage(), pb = await cb.newPage();
+      const errors = [];
+      pa.on("pageerror", (e) => errors.push(e.message));
+      pb.on("pageerror", (e) => errors.push(e.message));
+      await pa.goto(servers[0].origin + "/room/" + r.id);
+      await pa.getByRole("button", { name: "Multiple Choice", exact: true }).click();
+      assert.equal(await pa.getByRole("radio", { name: "Eine Antwort", exact: true }).isChecked(), true);
+      await pa.getByLabel("Deine Frage", { exact: true }).fill("Was gehört zu deinem perfekten Wochenende?");
+      await pa.getByRole("textbox", { name: "Option 1", exact: true }).fill("Ausschlafen");
+      await pa.getByRole("textbox", { name: "Option 2", exact: true }).fill("Freunde treffen");
+      await pa.getByRole("button", { name: "+ Option hinzufügen", exact: true }).click();
+      await pa.getByRole("textbox", { name: "Option 3", exact: true }).fill("Zeit draußen");
+      await pa.getByRole("button", { name: "+ Option hinzufügen", exact: true }).click();
+      await pa.getByRole("textbox", { name: "Option 4", exact: true }).fill("Ein guter Film");
+      await pa.getByRole("radio", { name: "Mehrere Antworten", exact: true }).check();
+      await pa.getByRole("checkbox", { name: "Option 1 als eigene Antwort auswählen" }).check();
+      await pa.getByRole("checkbox", { name: "Option 3 als eigene Antwort auswählen" }).check();
+      await pa.getByRole("radio", { name: "Eine Antwort", exact: true }).check();
+      await pa.getByRole("radio", { name: "Option 2 als eigene Antwort auswählen" }).check();
+      await pa.getByRole("radio", { name: "Mehrere Antworten", exact: true }).check();
+      assert.equal(await pa.getByRole("checkbox", { name: "Option 3 als eigene Antwort auswählen" }).isChecked(), true);
+      await pa.getByRole("button", { name: "Option 2 entfernen" }).click();
+      assert.equal(await pa.getByRole("textbox", { name: "Option 2", exact: true }).inputValue(), "Zeit draußen");
+      assert.equal(await pa.getByRole("checkbox", { name: "Option 2 als eigene Antwort auswählen" }).isChecked(), true);
+      assert.equal(await pa.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      await mkdir("test-results", { recursive: true });
+      await pa.screenshot({ path: "test-results/create-mobile.png", fullPage: true });
+      const posted = pa.waitForResponse((res) => res.url().endsWith("/ask") && res.request().method() === "POST");
+      await pa.getByRole("button", { name: "Frage stellen", exact: true }).click();
+      assert.equal((await posted).status(), 200);
+      const q = await db.question.findFirst({ where: { roomId: r.id, status: "PENDING" } });
+      assert.equal(q.type, "MULTIPLE_SELECT");
+      assert.equal(q.askerAnswer, "[0,1]");
+      await pb.goto(servers[0].origin + "/room/" + r.id);
+      await pb.getByRole("checkbox", { name: "Ausschlafen", exact: true }).waitFor();
+      assert.equal(await pb.getByRole("radio").count(), 0);
+      await pb.getByRole("button", { name: "Antworten abschicken", exact: true }).click();
+      await pb.getByText("Bitte eine Option auswählen", { exact: true }).waitFor();
+      assert.equal(await db.answer.count({ where: { questionId: q.id } }), 0);
+      await pb.getByRole("checkbox", { name: "Zeit draußen", exact: true }).check();
+      await pb.getByRole("checkbox", { name: "Ausschlafen", exact: true }).check();
+      assert.equal(await pb.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      await pb.screenshot({ path: "test-results/answer-mobile.png", fullPage: true });
+      await pb.emulateMedia({ colorScheme: "dark" });
+      await pb.screenshot({ path: "test-results/answer-dark.png", fullPage: true });
+      const replied = pb.waitForResponse((res) => res.url().endsWith("/answer") && res.request().method() === "POST");
+      await pb.getByRole("button", { name: "Antworten abschicken", exact: true }).click();
+      const response = await replied;
+      assert.equal(response.status(), 200);
+      assert.equal((await response.json()).isMatch, true);
+      await pb.getByText("✓ gleich", { exact: true }).first().waitFor();
+      assert.equal(await pb.getByRole("listitem").filter({ hasText: "Ausschlafen" }).count(), 2);
+      assert.equal(await pb.getByRole("listitem").filter({ hasText: "Zeit draußen" }).count(), 2);
+      await pb.screenshot({ path: "test-results/history-mobile.png", fullPage: true });
+      const legacy = await request("/api/rooms/" + r.id + "/ask", {
+        actor: b, data: { type: "MULTIPLE_CHOICE", text: "Eine Antwort wie bisher", options: ["Alt A","Alt B"], askerAnswer: "1" },
+      });
+      assert.equal(legacy.status, 200);
+      await pa.reload();
+      await pa.getByRole("radio", { name: "Alt B", exact: true }).check();
+      assert.equal(await pa.getByRole("checkbox").count(), 0);
+      const legacyReply = pa.waitForResponse((res) => res.url().endsWith("/answer") && res.request().method() === "POST");
+      await pa.getByRole("button", { name: "Antwort abschicken", exact: true }).click();
+      assert.equal((await legacyReply).status(), 200);
+      assert.deepEqual(errors, []);
+    } finally {
+      await browser.close();
+    }
+  });
+
 });

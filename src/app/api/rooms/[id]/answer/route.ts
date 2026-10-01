@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { parseMultipleAnswer } from "@/lib/choiceAnswers.mjs";
 import { getSession } from "@/lib/auth";
 import { serializable, mutationError } from "@/lib/transaction";
 import { findRoomForMember } from "@/lib/rooms";
@@ -53,6 +54,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         );
       }
 
+      let storedValue = value;
+      if (question.type === "MULTIPLE_SELECT") {
+        const options: string[] = question.options ? JSON.parse(question.options) : [];
+        const indices = parseMultipleAnswer(value, options.length);
+        if (!indices) {
+          return NextResponse.json({ error: "Bitte mindestens eine gültige Antwortoption ohne Duplikate auswählen" }, { status: 400 });
+        }
+        storedValue = JSON.stringify(indices);
+      }
       if (question.type === "MULTIPLE_CHOICE") {
         const options: string[] = question.options ? JSON.parse(question.options) : [];
         const index = Number(value);
@@ -64,7 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       // Resume a partial write from an older version without replacing its answer.
       if (!question.answer) {
         await tx.answer.create({
-          data: { questionId: question.id, responderId: session.userId, value },
+          data: { questionId: question.id, responderId: session.userId, value: storedValue },
         });
       }
       await tx.question.update({ where: { id: question.id }, data: { status: "ANSWERED" } });

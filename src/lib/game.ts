@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { answersMatch } from "@/lib/choiceAnswers.mjs";
 import { prisma } from "@/lib/db";
 
 export const MAX_OPTIONS = 5;
@@ -8,7 +9,7 @@ export const MAX_REACTION_LENGTH = 500;
 
 export type PublicQuestion = {
   id: string;
-  type: "MULTIPLE_CHOICE" | "TEXT";
+  type: "MULTIPLE_CHOICE" | "MULTIPLE_SELECT" | "TEXT";
   text: string;
   options: string[] | null;
   status: "PENDING" | "ANSWERED";
@@ -92,7 +93,7 @@ export function serializeQuestionForViewer(
         username: question.answer.responder.username,
       },
     };
-    base.isMatch = question.askerAnswer === question.answer.value;
+    base.isMatch = answersMatch(question.type, question.askerAnswer, question.answer.value, base.options?.length ?? 0);
   }
 
   return base;

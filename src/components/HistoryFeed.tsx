@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { answerLabels } from "@/lib/choiceAnswers.mjs";
 import type { PublicQuestion } from "@/types/game";
 
 const MAX_REACTION_LENGTH = 500;
@@ -16,18 +17,19 @@ function formatTime(iso: string) {
 
 function AnswerRow({
   label,
-  text,
+  answers,
   matched,
 }: {
   label: string;
-  text: string;
+  answers: string[];
   matched?: boolean;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
-      <span>
-        <span className="font-medium text-zinc-500">{label}:</span> {text}
-      </span>
+      <div className="min-w-0 break-words">
+        <span className="font-medium text-zinc-500">{label}:</span>{" "}
+        {answers.length > 1 ? <ul className="mt-1 list-disc pl-5">{answers.map((answer, index) => <li key={index}>{answer}</li>)}</ul> : answers[0]}
+      </div>
       {matched !== undefined && (
         <span className={matched ? "text-green-600 dark:text-green-400" : "text-zinc-400"}>
           {matched ? "✓ gleich" : ""}
@@ -124,14 +126,8 @@ export default function HistoryFeed({
   return (
     <div className="flex flex-col gap-4">
       {history.map((q) => {
-        const askerAnswerText =
-          q.type === "MULTIPLE_CHOICE" && q.options && q.askerAnswer !== undefined
-            ? q.options[Number(q.askerAnswer)]
-            : q.askerAnswer;
-        const responderAnswerText =
-          q.type === "MULTIPLE_CHOICE" && q.options && q.answer
-            ? q.options[Number(q.answer.value)]
-            : q.answer?.value;
+        const askerAnswers = answerLabels(q.type, q.options, q.askerAnswer);
+        const responderAnswers = answerLabels(q.type, q.options, q.answer?.value);
 
         return (
           <div
@@ -140,7 +136,7 @@ export default function HistoryFeed({
           >
             <div className="flex items-center justify-between">
               <span className="text-xs uppercase tracking-wide text-zinc-400">
-                {q.type === "MULTIPLE_CHOICE" ? "Multiple Choice" : "Freitext"} · {formatTime(q.createdAt)}
+                {q.type === "MULTIPLE_SELECT" ? "Multiple Choice · Mehrere Antworten" : q.type === "MULTIPLE_CHOICE" ? "Multiple Choice · Eine Antwort" : "Freitext"} · {formatTime(q.createdAt)}
               </span>
             </div>
             <p className="font-medium">
@@ -149,13 +145,13 @@ export default function HistoryFeed({
             <div className="flex flex-col gap-1.5">
               <AnswerRow
                 label={q.asker.username}
-                text={askerAnswerText ?? ""}
+                answers={askerAnswers}
                 matched={q.isMatch}
               />
               {q.answer && (
                 <AnswerRow
                   label={q.answer.responder.username}
-                  text={responderAnswerText ?? ""}
+                  answers={responderAnswers}
                   matched={q.isMatch}
                 />
               )}
