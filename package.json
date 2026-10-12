@@ -9,9 +9,10 @@
     "lint": "eslint",
     "postinstall": "prisma generate",
     "db:deploy": "node scripts/migrate-deploy.mjs",
-    "test:unit": "node --test tests/redirect.test.mjs tests/choiceAnswers.test.mjs tests/migrationPolicy.test.mjs",
+    "test:unit": "node --test tests/redirect.test.mjs tests/choiceAnswers.test.mjs tests/migrationPolicy.test.mjs tests/auditPolicy.test.mjs",
     "test:migrations": "node --test tests/migrations.test.mjs",
-    "test:integration": "node --test tests/integration.test.mjs"
+    "test:integration": "node --test tests/integration.test.mjs",
+    "audit:security": "node scripts/audit.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

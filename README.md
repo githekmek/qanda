@@ -174,3 +174,22 @@ sobald die verwendete Prisma-Version selbst eine korrigierte Abhängigkeit enth�
 
 Security-Update Oktober 2026: `sharp` ist auf 0.35.5 und `source-map-js` auf 1.2.2
 festgelegt. Der vollständige Abhängigkeitscheck bleibt eine Voraussetzung für die Freigabe.
+
+### Befristeter Umfang der Entwicklungs-Ausnahme
+
+Der Betreiber hat am 13.10.2026 ausschließlich GHSA-vfj7-8cjw-p6xm für die
+Entwicklungsprüfung freigegeben. Es gibt derzeit keinen veröffentlichten Patch für
+`braces@3.0.3`. Der Angriff erfordert tief verschachtelte, nicht vertrauenswürdige
+Glob-Muster; in diesem Projekt verarbeitet die Next.js-Lint-Konfiguration nur
+projektinterne Dateimuster, keine Eingaben aus Räumen oder HTTP-Anfragen.
+
+`npm run audit:security` erlaubt ausschließlich diese Advisory-ID und ihre
+Weiterleitung über die exakt festgelegten Entwicklungs-Versionen von
+`micromatch`, `fast-glob`, `@next/eslint-plugin-next` und `eslint-config-next`.
+Alle betroffenen Installationen müssen im Lockfile als `dev: true` markiert sein.
+Andere Meldungen, neue Versionen, produktive Vorkommen und Audit-Fehler blockieren
+die Freigabe. Die Ausnahme wird im CI-Protokoll sichtbar ausgegeben. Zusätzlich
+muss `npm audit --omit=dev` ohne Ausnahme erfolgreich sein.
+
+Die Ausnahme bei einem verfügbaren Upstream-Fix entfernen; bei Änderungen an
+Lint-Abhängigkeiten oder Glob-Eingaben muss sie erneut bewertet werden.
