@@ -166,8 +166,11 @@ eigene, anschließend entfernte Testschemas. Geprüft werden Neuinstallation,
 datenerhaltendes Upgrade, Schutz alter Datenbanken, parallele Spielzüge,
 atomare Registrierung, Einladungserneuerung, Raumlimits und bisherige Logins.
 
-Die Abhängigkeiten enthalten Next.js 16.3.6 (Sicherheitspatch) und eine gezielte
+Die Abhängigkeiten enthalten Next.js 16.3.8 (Sicherheitspatch) und eine gezielte
 Überschreibung von `@prisma/config` → `deepmerge-ts` auf 8.0.2 gegen
 GHSA-ggr8-5vv4-36mx. Prisma bleibt auf der bisherigen 6.x-Version; die
 Migrationstests prüfen die Kompatibilität. Die Überschreibung kann entfallen,
 sobald die verwendete Prisma-Version selbst eine korrigierte Abhängigkeit enthält.
+
+Security-Update Oktober 2026: `sharp` ist auf 0.35.5 und `source-map-js` auf 1.2.2
+festgelegt. Der vollständige Abhängigkeitscheck bleibt eine Voraussetzung für die Freigabe.
