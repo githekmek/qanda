@@ -138,7 +138,10 @@ Datenbank zurück und markiert keine Migration ohne Ausführung als erledigt.
 Bei diesem Stopp bleibt die bisherige App unverändert; die alte Einzelspiel-
 Datenbank benötigt vor dem Upgrade einen gesonderten datenerhaltenden Übernahmeplan.
 Vor Produktivmigrationen einen Datenbank-Snapshot beim Hostinganbieter erstellen.
-Vercel-Vorschau-Builds führen keine Datenbankmigrationen aus.
+Vercel-Vorschau-Builds führen Datenbankmigrationen nur dann aus, wenn die Preview-Umgebung
+eine eigene `DATABASE_URL` verwendet und `RUN_PREVIEW_MIGRATIONS=true` ausschließlich für
+Preview gesetzt ist. Ohne diese ausdrückliche Freigabe wird keine Preview-Datenbank verändert.
+Production migriert weiterhin unabhängig davon über ihre eigene `DATABASE_URL`.
 
 Bereits durch frühere Versionen entstandene zusätzliche Räume oder offene
 Fragen werden nicht gelöscht. Neue Spielzüge sind durch serialisierbare
