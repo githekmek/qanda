@@ -5,7 +5,7 @@ Der andere Spieler sieht die Frage, aber nicht die Antwort – bis er selbst gea
 Erst dann werden beide Antworten aufgedeckt, und die Rollen wechseln (der Antwortende darf nun
 die nächste Frage stellen).
 
-Fragen können **Multiple Choice** (2–5 Optionen) oder **Freitext** (max. 255 Zeichen) sein.
+Fragen können **Multiple Choice** (2–8 Optionen) oder **Freitext** (max. 255 Zeichen) sein.
 
 Gespielt wird in **privaten Räumen** mit je zwei Personen. Es gibt keine öffentliche Spielerliste:
 Wer sich anmeldet, sieht niemanden außer den Personen, mit denen er selbst einen Raum teilt.

@@ -2,8 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { answersMatch } from "@/lib/choiceAnswers.mjs";
 import { prisma } from "@/lib/db";
 
-export const MAX_OPTIONS = 5;
-export const MIN_OPTIONS = 2;
+export { MAX_OPTIONS, MIN_OPTIONS } from "@/lib/questionLimits";
 export const MAX_TEXT_LENGTH = 255;
 export const MAX_REACTION_LENGTH = 500;
 

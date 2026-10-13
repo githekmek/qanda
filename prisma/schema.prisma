@@ -77,7 +77,7 @@ model Question {
   id          String         @id @default(cuid())
   type        QuestionType
   text        String
-  options     String? // JSON-encoded array of up to 5 strings, for choice questions
+  options     String? // JSON-encoded array of up to 8 strings, for choice questions
   askerAnswer String // asker's own answer: option index, JSON index array for MULTIPLE_SELECT, or free text
   status      QuestionStatus @default(PENDING)
   createdAt   DateTime       @default(now())

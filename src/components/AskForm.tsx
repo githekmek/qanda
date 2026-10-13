@@ -9,8 +9,7 @@ import {
   type QuestionCategory,
 } from "@/lib/questionCatalog";
 
-const MAX_OPTIONS = 5;
-const MIN_OPTIONS = 2;
+import { MAX_OPTIONS, MIN_OPTIONS } from "@/lib/questionLimits";
 const MAX_TEXT_LENGTH = 255;
 
 // Only the selected state carries colour; unselected stays grey, so the two are

@@ -281,7 +281,7 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
         actor: a, data: { type: "MULTIPLE_SELECT", text: "Invalid", options: ["A","B"], askerAnswer },
       })).status, 400, askerAnswer);
     }
-    for (const options of [undefined, ["A"], ["A","B","C","D","E","F"], ["A",""]]) {
+    for (const options of [undefined, ["A"], ["A","B","C","D","E","F","G","H","I"], ["A",""]]) {
       assert.equal((await request("/api/rooms/" + r.id + "/ask", {
         actor: a, data: { type: "MULTIPLE_SELECT", text: "Invalid", options, askerAnswer: "[0]" },
       })).status, 400);
@@ -508,6 +508,94 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await keyboardToggle.focus();
       await page.keyboard.press("Enter");
       assert.equal(await keyboardToggle.getAttribute("aria-expanded"), "true");
+      assert.deepEqual(errors, []);
+    } finally { await browser.close(); }
+  });
+
+  await t.test("eight-option questions accept the last answer in both modes and reject nine options", async () => {
+    for (const type of ["MULTIPLE_CHOICE", "MULTIPLE_SELECT"]) {
+      const a = await user(), b = await user(), r = await room(a, b);
+      const options = ["A","B","C","D","E","F","G","H"];
+      const path = "/api/rooms/" + r.id;
+      const askerAnswer = type === "MULTIPLE_SELECT" ? "[0,1,2,3,4,5,6,7]" : "7";
+      for (const invalid of [[...options, "I"], ["A"]]) {
+        const rejected = await request(path + "/ask", { actor: a, data: { type, text: "Limit", options: invalid, askerAnswer } });
+        assert.equal(rejected.status, 400);
+        assert.equal(await db.question.count({ where: { roomId: r.id } }), 0);
+      }
+      const asked = await request(path + "/ask", { actor: a, data: { type, text: "Acht Optionen", options, askerAnswer } });
+      assert.equal(asked.status, 200, JSON.stringify(asked));
+      const pending = await request(path + "/state", { actor: b, method: "GET" });
+      assert.equal(pending.body.pendingQuestion.options.length, 8);
+      assert.equal(pending.body.pendingQuestion.askerAnswer, undefined);
+      const invalidAnswer = await request(path + "/answer", { actor: b, data: { questionId: asked.body.id, value: type === "MULTIPLE_SELECT" ? "[8]" : "8" } });
+      assert.equal(invalidAnswer.status, 400);
+      assert.equal(await db.answer.count({ where: { questionId: asked.body.id } }), 0);
+      const answered = await request(path + "/answer", { actor: b, data: { questionId: asked.body.id, value: type === "MULTIPLE_SELECT" ? "[7,6,5,4,3,2,1,0]" : "7" } });
+      assert.equal(answered.status, 200);
+      assert.equal(answered.body.isMatch, true);
+      assert.deepEqual(answered.body.options, options);
+      assert.equal(answered.body.answer.value, askerAnswer);
+    }
+  });
+
+  await t.test("browser: eight options, removal and last-option selection on mobile in both modes", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const { mkdir } = await import("node:fs/promises");
+    const browser = await chromium.launch();
+    try {
+      const a = await user(), b = await user();
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const page = await context.newPage();
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      for (const multiple of [false, true]) {
+        const r = await room(a, b);
+        await page.goto(servers[0].origin + "/room/" + r.id);
+        await page.getByRole("button", { name: "Multiple Choice", exact: true }).click();
+        if (multiple) await page.getByRole("radio", { name: "Mehrere Antworten", exact: true }).check();
+        await page.getByLabel("Deine Frage", { exact: true }).fill("Acht Optionen im Browser");
+        for (let i = 1; i <= 8; i++) {
+          if (i > 2) await page.getByRole("button", { name: "+ Option hinzufügen", exact: true }).click();
+          await page.getByRole("textbox", { name: "Option " + i, exact: true }).fill("Antwort " + i);
+        }
+        assert.equal(await page.getByRole("button", { name: "+ Option hinzufügen", exact: true }).count(), 0);
+        const inputRole = multiple ? "checkbox" : "radio";
+        await page.getByRole(inputRole, { name: "Option 8 als eigene Antwort auswählen", exact: true }).check();
+        await page.getByRole("button", { name: "Option 2 entfernen", exact: true }).click();
+        assert.equal(await page.getByRole(inputRole, { name: "Option 7 als eigene Antwort auswählen", exact: true }).isChecked(), true);
+        assert.equal(await page.getByRole("textbox", { name: "Option 7", exact: true }).inputValue(), "Antwort 8");
+        await page.getByRole("button", { name: "+ Option hinzufügen", exact: true }).click();
+        await page.getByRole("textbox", { name: "Option 8", exact: true }).fill("Neue achte Antwort");
+        await page.getByRole(inputRole, { name: "Option 8 als eigene Antwort auswählen", exact: true }).check();
+        if (multiple) {
+          for (let i = 1; i <= 8; i++) await page.getByRole("checkbox", { name: "Option " + i + " als eigene Antwort auswählen", exact: true }).check();
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        await mkdir("test-results", { recursive: true });
+        await page.screenshot({ path: "test-results/eight-options-" + (multiple ? "multiple" : "single") + ".png", fullPage: true });
+        const posted = page.waitForResponse((res) => res.url().endsWith("/ask") && res.request().method() === "POST");
+        await page.getByRole("button", { name: "Frage stellen", exact: true }).click();
+        const response = await posted;
+        assert.equal(response.status(), 200);
+        const q = await response.json();
+        assert.equal(q.options.length, 8);
+        assert.equal(q.askerAnswer, multiple ? "[0,1,2,3,4,5,6,7]" : "7");
+        // Switch only this isolated test browser's cookie to the second fixture user.
+        await context.addCookies([{ name: "qanda_session", value: (await cookie(b)).slice("qanda_session=".length), url: servers[0].origin }]);
+        await page.reload();
+        await page.getByRole(inputRole, { name: "Neue achte Antwort", exact: true }).check();
+        if (multiple) {
+          for (const label of q.options) await page.getByRole("checkbox", { name: label, exact: true }).check();
+        }
+        const replied = page.waitForResponse((res) => res.url().endsWith("/answer") && res.request().method() === "POST");
+        await page.getByRole("button", { name: multiple ? "Antworten abschicken" : "Antwort abschicken", exact: true }).click();
+        assert.equal((await replied).status(), 200);
+        await page.getByText("✓ gleich", { exact: true }).first().waitFor();
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+        await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      }
       assert.deepEqual(errors, []);
     } finally { await browser.close(); }
   });
