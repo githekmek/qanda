@@ -442,9 +442,20 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       const add = (author, text) => db.reaction.create({ data: { questionId: q.id, authorId: author.id, text } });
       const first = await add(b, "Neue Nachricht eins"), second = await add(b, "Neue Nachricht zwei");
       await add(a, "Meine Nachricht");
+      await db.question.createMany({ data: Array.from({ length: 8 }, (_, i) => ({
+        roomId: r.id, askerId: a.id, type: "TEXT", text: "Neuere Frage " + i,
+        askerAnswer: "A", status: "ANSWERED", createdAt: new Date(Date.now() + i + 1),
+      })) });
       const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
       await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
       const page = await context.newPage();
+      let failedReceipt = false;
+      await page.route("**/reaction-seen", async (route) => {
+        if (!failedReceipt && route.request().postDataJSON()?.reactionIds?.length) {
+          failedReceipt = true;
+          await route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"temporary test failure"}' });
+        } else await route.continue();
+      });
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.goto(servers[0].origin + "/room/" + r.id);
@@ -452,6 +463,8 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await toggle.waitFor();
       assert.equal(await toggle.getAttribute("aria-expanded"), "true");
       assert.equal(await page.locator("[data-new=true]").count(), 2);
+      await new Promise((resolve) => setTimeout(resolve, 1800));
+      assert.equal(await db.reactionRead.count({ where: { userId: a.id } }), 0, "off-screen expanded comments remain unread");
       await page.getByRole("button", { name: "Anzeigen", exact: true }).click();
       await page.locator("#reaction-" + second.id).scrollIntoViewIfNeeded();
       const waitRead = async (id) => {
@@ -463,6 +476,7 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       };
       await waitRead(first.id);
       await waitRead(second.id);
+      assert.equal(failedReceipt, true, "a failed receipt is retried successfully");
       assert.equal(await page.locator("[data-new=true]").count(), 2, "receipts do not remove current-visit highlighting");
       await page.getByRole("textbox", { name: "Kommentar schreiben", exact: true }).fill("Mein Entwurf");
       await toggle.click();
@@ -490,6 +504,10 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await page.getByRole("button", { name: /Kommentare \(4\)/ }).waitFor();
       assert.equal(await page.locator("[data-new=true]").count(), 0);
       assert.equal(await page.getByRole("button", { name: /Kommentare \(4\)/ }).getAttribute("aria-expanded"), "false");
+      const keyboardToggle = page.getByRole("button", { name: /Kommentare \(4\)/ });
+      await keyboardToggle.focus();
+      await page.keyboard.press("Enter");
+      assert.equal(await keyboardToggle.getAttribute("aria-expanded"), "true");
       assert.deepEqual(errors, []);
     } finally { await browser.close(); }
   });
