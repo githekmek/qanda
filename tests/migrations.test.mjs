@@ -93,6 +93,14 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       options: '["A","B"]', askerAnswer: "[0,1]",
     } });
     assert.equal(newQuestion.type, "MULTIPLE_SELECT");
+    assert.equal(await db.roomReactionVisit.count(), 0);
+    assert.equal(await db.reactionRead.count(), 0);
+    await db.roomReactionVisit.create({ data: { userId: b.id, roomId: room.id } });
+    const reaction = await db.reaction.findFirst({ where: { questionId: question.id } });
+    await db.reactionRead.create({ data: { userId: b.id, reactionId: reaction.id } });
+    succeeded(command(["scripts/migrate-deploy.mjs"], ctx.url));
+    assert.equal(await db.reactionRead.count(), 1);
+    assert.deepEqual((await snapshot()).reaction, before.reaction);
   } finally { await ctx.close(); }
 });
 

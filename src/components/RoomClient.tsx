@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { RoomStateResponse } from "@/types/game";
@@ -11,15 +11,74 @@ import InviteLink from "./InviteLink";
 
 const POLL_INTERVAL_MS = 5000;
 
-export default function RoomClient({ roomId, origin }: { roomId: string; origin: string }) {
+export default function RoomClient(props: { roomId: string; origin: string }) {
+  return <RoomContent key={props.roomId} {...props} />;
+}
+
+function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
   const router = useRouter();
   const [state, setState] = useState<RoomStateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
+  const [highlighted, setHighlighted] = useState<Record<string, true>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [jump, setJump] = useState<{ id: string; sequence: number } | null>(null);
+  const [readError, setReadError] = useState(false);
+  const initialized = useRef(false);
+  const refreshing = useRef(false);
+  const historySince = useRef<string | null>(null);
+  const pendingReads = useRef(new Set<string>());
+  const savedReads = useRef(new Set<string>());
+  const onSeen = useCallback((id: string) => {
+    if (!savedReads.current.has(id)) pendingReads.current.add(id);
+  }, []);
+
+  useEffect(() => {
+    let busy = false;
+    const flush = async () => {
+      if (busy || !pendingReads.current.size) return;
+      busy = true;
+      const ids = [...pendingReads.current].slice(0, 100);
+      try {
+        const res = await fetch(`/api/rooms/${roomId}/reaction-seen`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reactionIds: ids }), keepalive: true,
+        });
+        if (!res.ok) throw new Error("read receipt");
+        for (const id of ids) { savedReads.current.add(id); pendingReads.current.delete(id); }
+        setReadError(false);
+      } catch { setReadError(true); }
+      finally { busy = false; }
+    };
+    const timer = setInterval(flush, 1000);
+    const onLeave = () => { if (document.hidden) void flush(); };
+    document.addEventListener("visibilitychange", onLeave);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onLeave);
+      window.removeEventListener("pagehide", flush);
+      void flush();
+    };
+  }, [roomId]);
+
   const refresh = useCallback(async () => {
+    if (refreshing.current || document.hidden) return;
+    refreshing.current = true;
     try {
-      const res = await fetch(`/api/rooms/${roomId}/state`);
+      if (!initialized.current) {
+        const initial = await fetch(`/api/rooms/${roomId}/reaction-seen`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reactionIds: [] }),
+        });
+        if (initial.status === 401) { router.replace("/login"); return; }
+        if (initial.status === 404) { setNotFound(true); return; }
+        if (!initial.ok) throw new Error("initial visit");
+        initialized.current = true;
+      }
+      const query = historySince.current ? `?historySince=${encodeURIComponent(historySince.current)}` : "";
+      const res = await fetch(`/api/rooms/${roomId}/state${query}`, { cache: "no-store" });
       if (res.status === 401) {
         router.replace("/login");
         return;
@@ -28,11 +87,20 @@ export default function RoomClient({ roomId, origin }: { roomId: string; origin:
         setNotFound(true);
         return;
       }
-      setState(await res.json());
+      if (!res.ok) throw new Error("room state");
+      const next: RoomStateResponse = await res.json();
+      const oldest = next.history.at(-1)?.createdAt;
+      if (oldest) historySince.current = oldest;
+      setHighlighted((previous) => {
+        const merged = { ...previous };
+        for (const id of next.unreadReactionIds) merged[id] = true;
+        return merged;
+      });
+      setState(next);
       setError(null);
     } catch {
       setError("Verbindung zum Server fehlgeschlagen");
-    }
+    } finally { refreshing.current = false; }
   }, [roomId, router]);
 
   useEffect(() => {
@@ -86,6 +154,17 @@ export default function RoomClient({ roomId, origin }: { roomId: string; origin:
     }
   }
 
+  const newReactions = state?.history.flatMap((q) => q.reactions
+    .filter((reaction) => highlighted[reaction.id] && reaction.author.id !== state.me.id)
+    .map((reaction) => ({ id: reaction.id, questionId: q.id }))) ?? [];
+  function showNextReaction() {
+    const previousIndex = newReactions.findIndex((r) => r.id === jump?.id);
+    const next = newReactions[(previousIndex + 1) % newReactions.length];
+    if (!next) return;
+    setExpanded((previous) => ({ ...previous, [next.questionId]: true }));
+    setJump({ id: next.id, sequence: (jump?.sequence ?? 0) + 1 });
+  }
+
   if (notFound) {
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 py-8">
@@ -126,6 +205,16 @@ export default function RoomClient({ roomId, origin }: { roomId: string; origin:
           {error}
         </p>
       )}
+
+      {newReactions.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:bg-blue-950/40 dark:text-blue-100">
+          <span>{newReactions.length} {newReactions.length === 1 ? "neuer Kommentar" : "neue Kommentare"}</span>
+          <button type="button" onClick={showNextReaction} className="min-h-10 rounded px-2 font-semibold underline focus-visible:outline-2">
+            {jump ? "Nächsten anzeigen" : "Anzeigen"}
+          </button>
+        </div>
+      )}
+      {readError && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Der Gelesen-Stand konnte noch nicht gespeichert werden. Wir versuchen es erneut.</p>}
 
       {!state ? (
         <p className="text-sm text-zinc-400">Lade Raum…</p>
@@ -168,6 +257,11 @@ export default function RoomClient({ roomId, origin }: { roomId: string; origin:
               meId={state.me.id}
               readOnly={state.room.archived}
               onReacted={refresh}
+              highlighted={highlighted}
+              expanded={expanded}
+              onToggle={(id, open) => setExpanded((previous) => ({ ...previous, [id]: open }))}
+              onSeen={onSeen}
+              jump={jump}
             />
           </section>
         </>

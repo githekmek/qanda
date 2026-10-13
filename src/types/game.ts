@@ -24,6 +24,7 @@ export type PublicQuestion = {
 };
 
 export type RoomStateResponse = {
+  unreadReactionIds: string[];
   room: { id: string; name: string | null; archived: boolean; inviteCode: string | null };
   me: { id: string; username: string };
   opponent: { id: string; username: string } | null;

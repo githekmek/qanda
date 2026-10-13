@@ -32,6 +32,8 @@ model User {
   reactions         Reaction[]   @relation("ReactionAuthor")
   createdCodes      AccessCode[] @relation("CodeCreator")
   redeemedCode      AccessCode?  @relation("CodeRedeemer")
+  reactionVisits    RoomReactionVisit[]
+  reactionReads     ReactionRead[]
 }
 
 // Single-use registration code handed out by the admin.
@@ -68,6 +70,7 @@ model Room {
   currentAskerId String?
 
   questions Question[]
+  reactionVisits RoomReactionVisit[]
 }
 
 model Question {
@@ -112,6 +115,9 @@ model Reaction {
 
   authorId String
   author   User   @relation("ReactionAuthor", fields: [authorId], references: [id])
+  reads ReactionRead[]
+
+  @@index([questionId, createdAt])
 }
 
 model LoginRateLimit {
@@ -119,4 +125,26 @@ model LoginRateLimit {
   attempts  Int
   expiresAt DateTime
   @@index([expiresAt])
+}
+
+ // A first-visit marker; initialization only acknowledges reactions already present.
+model RoomReactionVisit {
+  userId String
+  roomId String
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  @@id([userId, roomId])
+  @@index([roomId])
+}
+
+// Exact receipts allow questions and comments to be read in any order.
+model ReactionRead {
+  userId String
+  reactionId String
+  seenAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reaction Reaction @relation(fields: [reactionId], references: [id], onDelete: Cascade)
+  @@id([userId, reactionId])
+  @@index([reactionId])
 }

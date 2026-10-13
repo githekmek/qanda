@@ -24,6 +24,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     include: questionInclude,
   });
 
+  const visit = await prisma.roomReactionVisit.findUnique({
+    where: { userId_roomId: { userId: session.userId, roomId: room.id } },
+  });
+  const unread = visit ? await prisma.reaction.findMany({
+    where: {
+      question: { roomId: room.id, status: "ANSWERED" },
+      authorId: { not: session.userId },
+      reads: { none: { userId: session.userId } },
+    },
+    select: { id: true, questionId: true },
+  }) : [];
   const historyRaw = await prisma.question.findMany({
     where: { roomId: room.id, status: "ANSWERED" },
     include: questionInclude,
@@ -31,7 +42,26 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     take: 100,
   });
 
+  // Keep older questions already loaded in this visit, even after their receipts
+  // have been saved. The membership-scoped query cannot expose other rooms.
+  const sinceText = new URL(_request.url).searchParams.get("historySince");
+  const since = sinceText ? new Date(sinceText) : null;
+  const older = await prisma.question.findMany({
+    where: {
+      roomId: room.id, status: "ANSWERED",
+      id: { notIn: historyRaw.map((q) => q.id) },
+      OR: [
+        { id: { in: unread.map((r) => r.questionId) } },
+        ...(since && !Number.isNaN(since.getTime()) ? [{ createdAt: { gte: since } }] : []),
+      ],
+    },
+    include: questionInclude,
+    orderBy: { createdAt: "desc" },
+  });
+  const history = [...historyRaw, ...older].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
   return NextResponse.json({
+    unreadReactionIds: unread.map((r) => r.id),
     room: {
       id: room.id,
       name: room.name,
@@ -44,6 +74,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       !archived && !pending && room.playerBId !== null && room.currentAskerId === session.userId,
     awaitingMyAnswer: !archived && Boolean(pending && pending.askerId !== session.userId),
     pendingQuestion: pending ? serializeQuestionForViewer(pending, session.userId) : null,
-    history: historyRaw.map((q) => serializeQuestionForViewer(q, session.userId)),
+    history: history.map((q) => serializeQuestionForViewer(q, session.userId)),
   });
 }

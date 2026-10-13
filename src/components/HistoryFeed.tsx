@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { answerLabels } from "@/lib/choiceAnswers.mjs";
+import ReactionComment from "./ReactionComment";
 import type { PublicQuestion } from "@/types/game";
 
 const MAX_REACTION_LENGTH = 500;
@@ -87,7 +88,8 @@ function ReactionComposer({
           maxLength={MAX_REACTION_LENGTH}
           onChange={(e) => setText(e.target.value)}
           placeholder="Etwas dazu sagen…"
-          className="flex-1 rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-800"
+          aria-label="Kommentar schreiben"
+          className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-800"
         />
         <button
           type="submit"
@@ -108,13 +110,29 @@ export default function HistoryFeed({
   meId,
   readOnly,
   onReacted,
+  highlighted,
+  expanded,
+  onToggle,
+  onSeen,
+  jump,
 }: {
   roomId: string;
   history: PublicQuestion[];
   meId: string;
   readOnly: boolean;
   onReacted: () => void;
+  highlighted: Record<string, true>;
+  expanded: Record<string, boolean>;
+  onToggle: (id: string, open: boolean) => void;
+  onSeen: (id: string) => void;
+  jump: { id: string; sequence: number } | null;
 }) {
+  useEffect(() => {
+    if (!jump) return;
+    const element = document.getElementById(`reaction-${jump.id}`);
+    element?.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+    element?.focus({ preventScroll: true });
+  }, [jump]);
   if (history.length === 0) {
     return (
       <p className="text-sm text-zinc-400">
@@ -126,6 +144,8 @@ export default function HistoryFeed({
   return (
     <div className="flex flex-col gap-4">
       {history.map((q) => {
+        const newCount = q.reactions.filter((r) => highlighted[r.id] && r.author.id !== meId).length;
+        const open = expanded[q.id] ?? newCount > 0;
         const askerAnswers = answerLabels(q.type, q.options, q.askerAnswer);
         const responderAnswers = answerLabels(q.type, q.options, q.answer?.value);
 
@@ -157,26 +177,27 @@ export default function HistoryFeed({
               )}
             </div>
 
-            {q.reactions.length > 0 && (
-              <div className="flex flex-col gap-1.5 border-l-2 border-zinc-100 pl-3 dark:border-zinc-800">
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={`comments-${q.id}`}
+              onClick={() => onToggle(q.id, !open)}
+              className="flex min-h-11 items-center gap-2 rounded-lg px-2 text-left text-sm font-medium text-zinc-600 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-blue-500 dark:text-zinc-300 dark:hover:bg-zinc-900"
+            >
+              <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+              {q.reactions.length ? `Kommentare (${q.reactions.length})` : readOnly ? "Kommentare (0)" : "Kommentar schreiben"}
+              {newCount > 0 && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-100">{newCount} neu</span>}
+            </button>
+            <div id={`comments-${q.id}`} hidden={!open}>
+              <div className="flex flex-col gap-2">
                 {q.reactions.map((reaction) => (
-                  <p key={reaction.id} className="text-sm">
-                    <span
-                      className={`font-medium ${
-                        reaction.author.id === meId ? "text-zinc-500" : "text-zinc-800 dark:text-zinc-200"
-                      }`}
-                    >
-                      {reaction.author.username}:
-                    </span>{" "}
-                    <span className="text-zinc-600 dark:text-zinc-300">{reaction.text}</span>
-                  </p>
+                  <ReactionComment key={reaction.id} reaction={reaction}
+                    isNew={Boolean(highlighted[reaction.id]) && reaction.author.id !== meId}
+                    expanded={open} meId={meId} onSeen={onSeen} />
                 ))}
+                {!readOnly && <ReactionComposer roomId={roomId} questionId={q.id} onSubmitted={onReacted} />}
               </div>
-            )}
-
-            {!readOnly && (
-              <ReactionComposer roomId={roomId} questionId={q.id} onSubmitted={onReacted} />
-            )}
+            </div>
           </div>
         );
       })}

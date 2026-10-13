@@ -393,4 +393,105 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     }
   });
 
+  await t.test("reaction receipts: baseline, all foreign comments, independent users, authorization and older history", async () => {
+    const a = await user(), b = await user(), outsider = await user(), r = await room(a, b);
+    const q = await db.question.create({ data: { roomId: r.id, askerId: a.id, type: "TEXT", text: "Old conversation", askerAnswer: "A", status: "ANSWERED", createdAt: new Date("2020-01-01") } });
+    const add = (author, text) => db.reaction.create({ data: { questionId: q.id, authorId: author.id, text } });
+    const old = await add(b, "baseline");
+    const path = "/api/rooms/" + r.id;
+    const initialize = () => request(path + "/reaction-seen", { actor: a, data: { reactionIds: [] } });
+    assert.equal((await initialize()).status, 200);
+    assert.equal((await request(path + "/state", { actor: a, method: "GET" })).body.unreadReactionIds.length, 0);
+    const first = await add(b, "one"), second = await add(b, "two"), own = await add(a, "own");
+    // The old question is deliberately outside the existing 100-question window.
+    await db.question.createMany({ data: Array.from({ length: 101 }, (_, i) => ({
+      roomId: r.id, askerId: a.id, type: "TEXT", text: "Recent " + i, askerAnswer: "A", status: "ANSWERED",
+    })) });
+    const state = () => request(path + "/state", { actor: a, method: "GET" });
+    assert.deepEqual(new Set((await state()).body.unreadReactionIds), new Set([first.id, second.id]));
+    assert.ok((await state()).body.history.some((item) => item.id === q.id));
+    await initialize(); // Reopening/another tab never acknowledges unseen comments.
+    assert.equal((await state()).body.unreadReactionIds.length, 2);
+    const otherRoom = await room(b, outsider);
+    const otherQ = await db.question.create({ data: { roomId: otherRoom.id, askerId: b.id, type: "TEXT", text: "private", askerAnswer: "A", status: "ANSWERED" } });
+    const privateReaction = await db.reaction.create({ data: { questionId: otherQ.id, authorId: b.id, text: "private" } });
+    assert.equal((await request(path + "/reaction-seen", { data: { reactionIds: [first.id] } })).status, 401);
+    assert.equal((await request(path + "/reaction-seen", { actor: outsider, data: { reactionIds: [first.id] } })).status, 404);
+    assert.equal((await request(path + "/reaction-seen", { actor: a, data: { reactionIds: Array(101).fill(first.id) } })).status, 400);
+    assert.equal((await request(path + "/reaction-seen", { actor: a, data: { reactionIds: [second.id, second.id, own.id, privateReaction.id, "missing"] } })).status, 200);
+    assert.deepEqual((await state()).body.unreadReactionIds, [first.id], "reading out of order must preserve earlier unread comments");
+    assert.equal(await db.reactionRead.count({ where: { userId: a.id, reactionId: { in: [own.id, privateReaction.id] } } }), 0);
+    await db.room.update({ where: { id: r.id }, data: { archivedAt: new Date() } });
+    assert.equal((await request(path + "/reaction-seen", { actor: a, data: { reactionIds: [first.id] } })).status, 200);
+    assert.equal((await state()).body.unreadReactionIds.length, 0);
+    const retained = await request(path + "/state?historySince=" + encodeURIComponent(q.createdAt.toISOString()), { actor: a, method: "GET" });
+    assert.ok(retained.body.history.some((item) => item.id === q.id), "seen older questions remain accessible during the visit");
+    assert.equal(await db.reaction.count({ where: { questionId: q.id } }), 4);
+    assert.equal(await db.reactionRead.count({ where: { userId: b.id } }), 0);
+    assert.ok(await db.reactionRead.findUnique({ where: { userId_reactionId: { userId: a.id, reactionId: old.id } } }));
+  });
+
+  await t.test("browser: collapse, visibility receipts, persistent visit highlights and new comments while collapsed", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const { mkdir } = await import("node:fs/promises");
+    const browser = await chromium.launch();
+    try {
+      const a = await user(), b = await user(), r = await room(a, b, { currentAskerId: b.id });
+      const q = await db.question.create({ data: { roomId: r.id, askerId: a.id, type: "TEXT", text: "Kommentare testen", askerAnswer: "A", status: "ANSWERED" } });
+      await request("/api/rooms/" + r.id + "/reaction-seen", { actor: a, data: { reactionIds: [] } });
+      const add = (author, text) => db.reaction.create({ data: { questionId: q.id, authorId: author.id, text } });
+      const first = await add(b, "Neue Nachricht eins"), second = await add(b, "Neue Nachricht zwei");
+      await add(a, "Meine Nachricht");
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const page = await context.newPage();
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.goto(servers[0].origin + "/room/" + r.id);
+      const toggle = page.getByRole("button", { name: /Kommentare \(3\)/ });
+      await toggle.waitFor();
+      assert.equal(await toggle.getAttribute("aria-expanded"), "true");
+      assert.equal(await page.locator("[data-new=true]").count(), 2);
+      await page.getByRole("button", { name: "Anzeigen", exact: true }).click();
+      await page.locator("#reaction-" + second.id).scrollIntoViewIfNeeded();
+      const waitRead = async (id) => {
+        for (let i = 0; i < 50; i++) {
+          if (await db.reactionRead.findUnique({ where: { userId_reactionId: { userId: a.id, reactionId: id } } })) return;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        assert.fail("visible reaction was not acknowledged");
+      };
+      await waitRead(first.id);
+      await waitRead(second.id);
+      assert.equal(await page.locator("[data-new=true]").count(), 2, "receipts do not remove current-visit highlighting");
+      await page.getByRole("textbox", { name: "Kommentar schreiben", exact: true }).fill("Mein Entwurf");
+      await toggle.click();
+      const third = await add(b, "Neu während eingeklappt");
+      const changedToggle = page.getByRole("button", { name: /Kommentare \(4\)/ });
+      await changedToggle.waitFor({ timeout: 12000 });
+      assert.equal(await changedToggle.getAttribute("aria-expanded"), "false");
+      assert.equal(await db.reactionRead.count({ where: { userId: a.id, reactionId: third.id } }), 0);
+      await page.reload();
+      await page.getByRole("button", { name: /Kommentare \(4\)/ }).waitFor();
+      assert.equal(await page.locator("[data-new=true]").count(), 1, "only the unseen comment is new on the next visit");
+      await page.getByRole("button", { name: "Anzeigen", exact: true }).click();
+      await waitRead(third.id);
+      await page.getByRole("textbox", { name: "Kommentar schreiben", exact: true }).fill("Entwurf bleibt");
+      const finalToggle = page.getByRole("button", { name: /Kommentare \(4\)/ });
+      await finalToggle.click();
+      await finalToggle.click();
+      assert.equal(await page.getByRole("textbox", { name: "Kommentar schreiben", exact: true }).inputValue(), "Entwurf bleibt");
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      await mkdir("test-results", { recursive: true });
+      await page.screenshot({ path: "test-results/reactions-mobile.png", fullPage: true });
+      await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+      await page.screenshot({ path: "test-results/reactions-dark.png", fullPage: true });
+      await page.reload();
+      await page.getByRole("button", { name: /Kommentare \(4\)/ }).waitFor();
+      assert.equal(await page.locator("[data-new=true]").count(), 0);
+      assert.equal(await page.getByRole("button", { name: /Kommentare \(4\)/ }).getAttribute("aria-expanded"), "false");
+      assert.deepEqual(errors, []);
+    } finally { await browser.close(); }
+  });
+
 });

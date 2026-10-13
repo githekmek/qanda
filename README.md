@@ -193,3 +193,24 @@ muss `npm audit --omit=dev` ohne Ausnahme erfolgreich sein.
 
 Die Ausnahme bei einem verfügbaren Upstream-Fix entfernen; bei Änderungen an
 Lint-Abhängigkeiten oder Glob-Eingaben muss sie erneut bewertet werden.
+
+### Neue Kommentare und Ausklappen
+
+Kommentare sind pro Frage ausklappbar. Alle neuen fremden Kommentare erhalten
+„Neu“ und eine blaue Markierung. Fragen mit neuen Kommentaren öffnen sich
+automatisch; eine manuell geschlossene Frage bleibt während des Besuchs geschlossen.
+„Anzeigen“ und „Nächsten anzeigen“ springen durch die neuen Kommentare.
+
+Der erste Besuch eines Raums nach Einführung übernimmt vorhandene Kommentare als
+Ausgangsstand. Danach werden Kommentare erst nach mindestens 600 ms mit mindestens
+50 % sichtbarer Fläche im geöffneten Bereich und sichtbarem Browser-Tab als gesehen
+gespeichert. Eigene Kommentare werden nie als neu markiert. Markierungen bleiben
+für den laufenden Besuch erhalten; ungesehene Kommentare bleiben beim nächsten
+Besuch neu. Auch neue Kommentare an älteren Fragen und archivierte Räume werden
+berücksichtigt. Der Gelesen-Stand wird pro Nutzer in der Datenbank gespeichert und
+gilt daher auch auf anderen Geräten. Bei Speicherfehlern wird erneut versucht;
+ein nicht bestätigter Kommentar kann beim nächsten Besuch erneut als neu erscheinen.
+
+Migration `20261013000000_reaction_reads` ergänzt ausschließlich zwei Tabellen und
+Indizes. Bestehende Nutzer, Räume, Einladungen, Fragen, Antworten und Reaktionen
+bleiben unverändert. Vorschau wie bisher mit eigenem Neon-Branch prüfen.
