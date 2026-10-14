@@ -632,6 +632,11 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     const beforeRoom = await db.room.findUnique({ where: { id: r.id } });
     const email = a.username + "@example.test";
     const path = "/api/auth/recovery";
+    const crossOrigin = await fetch(servers[0].origin + path, {
+      method: "POST", headers: { Origin: "https://attacker.example", "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "request", email }),
+    });
+    assert.equal(crossOrigin.status, 403);
     assert.equal((await request(path, { data: { action: "email", email, password: "old123" } })).status, 401);
     assert.equal((await request(path, { actor: a, data: { action: "email", email, password: "wrong" } })).status, 403);
     assert.equal((await request(path, { actor: a, data: { action: "email", email: email.toUpperCase(), password: "old123" } })).status, 200);
@@ -720,7 +725,10 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await page.goto(servers[0].origin + "/konto");
       await page.getByLabel("E-Mail-Adresse", { exact: true }).fill(email);
       await page.getByLabel("Aktuelles Passwort", { exact: true }).fill("old123");
+      const emailResponse = page.waitForResponse((res) => res.url().endsWith("/api/auth/recovery") && res.request().method() === "POST");
       await page.getByRole("button", { name: "Bestätigungsmail senden" }).click();
+      const sent = await emailResponse;
+      assert.equal(sent.status(), 200, await sent.text());
       await page.getByRole("status").filter({ hasText: "Wenn die Adresse" }).waitFor();
       const verify = mailToken(await waitMail(email, "bestätigen"));
       await page.goto(servers[0].origin + "/konto/bestaetigen#token=" + verify);

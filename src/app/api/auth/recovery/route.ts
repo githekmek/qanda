@@ -36,8 +36,16 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) {
-    return NextResponse.json({ error: "Ungültige Anfrage" }, { status: 403 });
+  if (origin) {
+    let sameOrigin = false;
+    try {
+      const source = new URL(origin);
+      // Next's internal URL can use localhost behind a proxy. Compare the
+      // browser Origin with the actual HTTP Host, which browser JS cannot set.
+      sameOrigin = source.host === request.headers.get("host") &&
+        source.protocol === new URL(request.url).protocol;
+    } catch { /* Invalid and opaque origins are rejected. */ }
+    if (!sameOrigin) return NextResponse.json({ error: "Ungültige Anfrage" }, { status: 403 });
   }
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Bitte prüfe deine Eingaben. Neue Passwörter benötigen mindestens 12 Zeichen und höchstens 72 UTF-8-Bytes." }, { status: 400 });
