@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
@@ -14,6 +16,9 @@ const password = "new-test-password-123";
 const secret = "integration-test-secret-not-a-production-secret";
 const setupCode = "integration-setup-code";
 
+let mailUrl = "";
+const mails = [];
+let rejectMail = false;
 async function startServer(url) {
   const socket = createServer();
   socket.listen(0, "127.0.0.1");
@@ -21,7 +26,7 @@ async function startServer(url) {
   const port = socket.address().port;
   await new Promise((resolve) => socket.close(resolve));
   const child = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "-p", String(port)], {
-    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0" },
+    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0", BREVO_API_KEY: "isolated-test-key", BREVO_SENDER_EMAIL: "sender@example.test", APP_URL: "https://qanda.example.test", TEST_MAIL_URL: mailUrl, NODE_OPTIONS: "--import=" + require.resolve("./mockBrevo.mjs") },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let logs = "";
@@ -52,8 +57,19 @@ async function startServer(url) {
 test("security and compatibility against real PostgreSQL and HTTP routes", { timeout: 240000 }, async (t) => {
   const ctx = await isolatedDatabase();
   const servers = [];
+  const mailServer = createHttpServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    if (rejectMail) { res.writeHead(503); res.end("{}"); return; }
+    mails.push(JSON.parse(body));
+    res.writeHead(201, { "Content-Type": "application/json" }); res.end('{"messageId":"test"}');
+  });
+  mailServer.listen(0, "127.0.0.1");
+  await once(mailServer, "listening");
+  mailUrl = "http://127.0.0.1:" + mailServer.address().port;
   t.after(async () => {
     for (const server of servers) await server.stop();
+    await new Promise((resolve) => mailServer.close(resolve));
     await ctx.close();
   });
   succeeded(command(["scripts/migrate-deploy.mjs"], ctx.url));
@@ -596,6 +612,136 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
         await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
       }
+      assert.deepEqual(errors, []);
+    } finally { await browser.close(); }
+  });
+
+  async function waitMail(email, subject) {
+    for (let i = 0; i < 100; i++) {
+      const match = mails.findLast((mail) => mail.to[0].email === email && mail.subject.includes(subject));
+      if (match) return match;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.fail("No mail received for " + email);
+  }
+  const mailToken = (mail) => mail.textContent.match(/#token=([a-f0-9]{64})/)[1];
+  const tokenHash = (token) => createHash("sha256").update(token).digest("hex");
+
+  await t.test("email verification and one-use password reset preserve game data and revoke old sessions", async () => {
+    const a = await user(), b = await user(), r = await room(a, b);
+    const beforeRoom = await db.room.findUnique({ where: { id: r.id } });
+    const email = a.username + "@example.test";
+    const path = "/api/auth/recovery";
+    assert.equal((await request(path, { data: { action: "email", email, password: "old123" } })).status, 401);
+    assert.equal((await request(path, { actor: a, data: { action: "email", email, password: "wrong" } })).status, 403);
+    assert.equal((await request(path, { actor: a, data: { action: "email", email: email.toUpperCase(), password: "old123" } })).status, 200);
+    assert.equal((await db.user.findUnique({ where: { id: a.id } })).email, null, "not saved before verification");
+    const verification = mailToken(await waitMail(email, "bestätigen"));
+    const rows = await db.recoveryToken.findMany({ where: { userId: a.id } });
+    assert.equal(rows[0].tokenHash, tokenHash(verification));
+    assert.ok(!JSON.stringify(rows).includes(verification));
+    assert.equal((await request(path, { data: { action: "reset", token: verification, password } })).status, 400);
+    assert.equal((await request(path, { data: { action: "verify", token: verification } })).status, 200);
+    assert.equal((await request(path, { data: { action: "verify", token: verification } })).status, 400);
+    const account = await request(path, { actor: a, method: "GET" });
+    assert.equal(account.body.email, email);
+    assert.equal(account.body.verified, true);
+    const other = await request(path, { actor: b, method: "GET" });
+    assert.equal(other.body.email, null);
+    const unknown = await request(path, { data: { action: "request", email: "unknown@example.test" } });
+    const known = await request(path, { data: { action: "request", email } });
+    assert.deepEqual(known.body, unknown.body);
+    const reset = mailToken(await waitMail(email, "zurücksetzen"));
+    assert.equal((await request(path, { data: { action: "reset", token: reset, password: "short" } })).status, 400);
+    const outcomes = await Promise.all([0,1].map((server) => request(path, { server, data: { action: "reset", token: reset, password } })));
+    assert.equal(outcomes.filter((r) => r.status === 200).length, 1, JSON.stringify(outcomes));
+    assert.equal((await request(path, { actor: a, method: "GET" })).status, 401, "old-format sessions revoked");
+    assert.equal((await request("/api/auth/login", { data: { username: a.username, password: "old123" } })).status, 401);
+    const login = await request("/api/auth/login", { data: { username: a.username, password } });
+    assert.equal(login.status, 200);
+    const authenticated = await fetch(servers[0].origin + path, { headers: { Cookie: login.headers.get("set-cookie").split(";")[0] } });
+    assert.equal(authenticated.status, 200, "fresh session uses current version");
+    assert.deepEqual(await db.room.findUnique({ where: { id: r.id } }), beforeRoom);
+    assert.equal((await db.user.findUnique({ where: { id: b.id } })).sessionVersion, 0);
+    assert.equal(await db.recoveryToken.count({ where: { userId: a.id } }), 0);
+  });
+
+  await t.test("expired links, duplicate emails and failed mail delivery never overwrite accounts", async () => {
+    const a = await user(), b = await user();
+    const path = "/api/auth/recovery", email = a.username + "@example.test";
+    await db.user.update({ where: { id: b.id }, data: { email, emailVerifiedAt: new Date() } });
+    const before = await db.user.findUnique({ where: { id: a.id } });
+    await request(path, { actor: a, data: { action: "email", email, password: "old123" } });
+    assert.equal(await db.recoveryToken.count({ where: { userId: a.id } }), 0);
+    rejectMail = true;
+    try {
+      assert.equal((await request(path, { actor: a, data: { action: "email", email: "delivery-failure@example.test", password: "old123" } })).status, 503);
+    } finally { rejectMail = false; }
+    assert.equal(await db.recoveryToken.count({ where: { userId: a.id } }), 0);
+    const expired = randomBytes(32).toString("hex");
+    await db.recoveryToken.create({ data: { tokenHash: tokenHash(expired), userId: a.id, email: "expired@example.test", purpose: "verify", sessionVersion: 0, expiresAt: new Date(0) } });
+    assert.equal((await request(path, { data: { action: "verify", token: expired } })).status, 400);
+    assert.deepEqual(await db.user.findUnique({ where: { id: a.id } }), before);
+    for (let i = 0; i < 3; i++) assert.equal((await request(path, { data: { action: "request", email: "rate-limited@example.test" } })).status, 200);
+    assert.equal((await request(path, { data: { action: "request", email: "rate-limited@example.test" } })).status, 429);
+    assert.equal((await request("/api/auth/login", { data: { username: a.username, password: "old123" } })).status, 200);
+  });
+
+  await t.test("browser: shared checkbox answers are marked individually, including one selected option", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    try {
+      const a = await user(), b = await user(), r = await room(a, b, { currentAskerId: b.id });
+      const q = await db.question.create({ data: { roomId: r.id, askerId: a.id, type: "MULTIPLE_SELECT", text: "Teilweise gleich", options: '["Kino","Kino","Sport"]', askerAnswer: "[0,2]", status: "ANSWERED", answer: { create: { responderId: b.id, value: "[0,1]" } } } });
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const page = await context.newPage();
+      await page.goto(servers[0].origin + "/room/" + r.id);
+      await page.getByText("Teilweise gleich", { exact: false }).waitFor();
+      assert.equal(await page.getByLabel("Von beiden gewählt", { exact: true }).count(), 2);
+      assert.equal(await page.getByText("✓ gleich", { exact: true }).count(), 0);
+      await db.question.update({ where: { id: q.id }, data: { askerAnswer: "[0]" } });
+      await page.reload();
+      await page.getByText("Teilweise gleich", { exact: false }).waitFor();
+      assert.equal(await page.getByLabel("Von beiden gewählt", { exact: true }).count(), 2);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    } finally { await browser.close(); }
+  });
+
+  await t.test("browser: account email confirmation and password-reset forms", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    try {
+      const a = await user(), email = a.username + "@example.test";
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const page = await context.newPage(), errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.goto(servers[0].origin + "/konto");
+      await page.getByLabel("E-Mail-Adresse", { exact: true }).fill(email);
+      await page.getByLabel("Aktuelles Passwort", { exact: true }).fill("old123");
+      await page.getByRole("button", { name: "Bestätigungsmail senden" }).click();
+      await page.getByRole("status").filter({ hasText: "Wenn die Adresse" }).waitFor();
+      const verify = mailToken(await waitMail(email, "bestätigen"));
+      await page.goto(servers[0].origin + "/konto/bestaetigen#token=" + verify);
+      await page.getByRole("button", { name: "E-Mail bestätigen", exact: true }).click();
+      await page.getByText("Deine E-Mail-Adresse ist bestätigt.", { exact: true }).waitFor();
+      assert.ok(!page.url().includes(verify));
+      await page.goto(servers[0].origin + "/passwort-vergessen");
+      await page.getByLabel("E-Mail-Adresse", { exact: true }).fill(email);
+      await page.getByRole("button", { name: "Reset-Link anfordern" }).click();
+      const reset = mailToken(await waitMail(email, "zurücksetzen"));
+      await page.goto(servers[0].origin + "/konto/passwort#token=" + reset);
+      await page.getByLabel("Neues Passwort", { exact: true }).fill(password);
+      await page.getByLabel("Neues Passwort wiederholen", { exact: true }).fill("different-password");
+      await page.getByRole("button", { name: "Passwort speichern" }).click();
+      await page.getByRole("alert").filter({ hasText: "stimmen nicht überein" }).waitFor();
+      await page.getByLabel("Neues Passwort wiederholen", { exact: true }).fill(password);
+      await page.getByRole("button", { name: "Passwort speichern" }).click();
+      await page.getByRole("link", { name: "Jetzt anmelden" }).waitFor();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      await page.goto(servers[0].origin + "/konto");
+      await page.waitForURL("**/login");
       assert.deepEqual(errors, []);
     } finally { await browser.close(); }
   });

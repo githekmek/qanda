@@ -96,7 +96,7 @@ export default function Dashboard({
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
-      <header className="flex items-start justify-between gap-4">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">Q&amp;A</h1>
           <p className="text-sm text-zinc-500">
@@ -104,7 +104,8 @@ export default function Dashboard({
             <span className="font-medium">{username}</span>
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Link href="/konto" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium dark:border-zinc-700">Konto</Link>
           {isAdmin && (
             <Link
               href="/admin"

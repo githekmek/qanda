@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { answerLabels } from "@/lib/choiceAnswers.mjs";
+import { answerLabels, matchingAnswerPositions } from "@/lib/choiceAnswers.mjs";
 import ReactionComment from "./ReactionComment";
 import type { PublicQuestion } from "@/types/game";
 
@@ -20,16 +20,18 @@ function AnswerRow({
   label,
   answers,
   matched,
+  itemMatches,
 }: {
   label: string;
   answers: string[];
   matched?: boolean;
+  itemMatches?: boolean[];
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
       <div className="min-w-0 break-words">
         <span className="font-medium text-zinc-500">{label}:</span>{" "}
-        {answers.length > 1 ? <ul className="mt-1 list-disc pl-5">{answers.map((answer, index) => <li key={index}>{answer}</li>)}</ul> : answers[0]}
+        {answers.length > 1 ? <ul className="mt-1 list-disc pl-5">{answers.map((answer, index) => <li key={index}>{answer}{itemMatches?.[index] && <span className="ml-2 text-green-600 dark:text-green-400" aria-label="Von beiden gewählt">✓</span>}</li>)}</ul> : <>{answers[0]}{itemMatches?.[0] && <span className="ml-2 text-green-600 dark:text-green-400" aria-label="Von beiden gewählt">✓</span>}</>}
       </div>
       {matched !== undefined && (
         <span className={matched ? "text-green-600 dark:text-green-400" : "text-zinc-400"}>
@@ -166,12 +168,14 @@ export default function HistoryFeed({
               <AnswerRow
                 label={q.asker.username}
                 answers={askerAnswers}
+                itemMatches={q.type === "MULTIPLE_SELECT" ? matchingAnswerPositions(q.askerAnswer, q.answer?.value, q.options?.length ?? 0) : undefined}
                 matched={q.isMatch}
               />
               {q.answer && (
                 <AnswerRow
                   label={q.answer.responder.username}
                   answers={responderAnswers}
+                  itemMatches={q.type === "MULTIPLE_SELECT" ? matchingAnswerPositions(q.answer.value, q.askerAnswer, q.options?.length ?? 0) : undefined}
                   matched={q.isMatch}
                 />
               )}

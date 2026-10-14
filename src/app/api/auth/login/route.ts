@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Benutzername oder Passwort falsch" }, { status: 401 });
   }
 
-  await createSessionCookie({ userId: user.id, username: user.username });
+  await createSessionCookie({ userId: user.id, username: user.username, sessionVersion: user.sessionVersion });
 
   return NextResponse.json({ id: user.id, username: user.username });
 }

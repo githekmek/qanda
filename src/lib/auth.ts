@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { prisma } from "@/lib/db";
 
 const COOKIE_NAME = "qanda_session";
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -15,10 +16,11 @@ function getSecretKey() {
 export type SessionPayload = {
   userId: string;
   username: string;
+  sessionVersion?: number;
 };
 
 export async function createSessionCookie(payload: SessionPayload) {
-  const token = await new SignJWT(payload)
+  const token = await new SignJWT({ ...payload, sessionVersion: payload.sessionVersion ?? 0 })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_DURATION_SECONDS}s`)
@@ -49,7 +51,9 @@ export async function getSession(): Promise<SessionPayload | null> {
     if (typeof payload.userId !== "string" || typeof payload.username !== "string") {
       return null;
     }
-    return { userId: payload.userId, username: payload.username };
+    const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { username: true, sessionVersion: true } });
+    if (!user || user.sessionVersion !== (payload.sessionVersion ?? 0)) return null;
+    return { userId: payload.userId, username: user.username, sessionVersion: user.sessionVersion };
   } catch {
     return null;
   }

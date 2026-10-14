@@ -10,9 +10,11 @@ const oldMigrations = [
   "20250102000000_add_reactions",
   "20250103000000_rooms_and_access_codes",
   "20260925000000_login_rate_limit",
+  "20261001000000_multiple_select",
+  "20261013000000_reaction_reads",
 ];
 
-async function installOld(url, count = 4) {
+async function installOld(url, count = 6) {
   const dir = await mkdtemp(join(tmpdir(), "qanda-migrations-"));
   try {
     await mkdir(join(dir, "migrations"));
@@ -41,8 +43,8 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
   try {
     await installOld(ctx.url);
     const db = ctx.db;
-    const a = await db.user.create({ data: { username: "existing_a", passwordHash: "unchanged_hash_a", isAdmin: true } });
-    const b = await db.user.create({ data: { username: "existing_b", passwordHash: "unchanged_hash_b" } });
+    const a = await db.user.create({ data: { username: "existing_a", passwordHash: "unchanged_hash_a", isAdmin: true }, select: { id: true } });
+    const b = await db.user.create({ data: { username: "existing_b", passwordHash: "unchanged_hash_b" }, select: { id: true } });
     const room = await db.room.create({ data: {
       name: "Bestehender Raum", inviteCode: "ORIGINALINVITE", playerAId: a.id,
       playerBId: b.id, currentAskerId: b.id,
@@ -75,11 +77,17 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     } });
     await db.answer.create({ data: { questionId: completed.id, responderId: a.id, value: "1" } });
 
+    await db.roomReactionVisit.create({ data: { userId: b.id, roomId: room.id } });
+    const reaction = await db.reaction.findFirst({ where: { questionId: question.id } });
+    await db.reactionRead.create({ data: { userId: b.id, reactionId: reaction.id } });
+
     async function snapshot() {
       const result = {};
       for (const model of ["user", "room", "question", "answer", "reaction", "accessCode"]) {
-        result[model] = await db[model].findMany({ orderBy: { id: "asc" } });
+        result[model] = await db[model].findMany({ orderBy: { id: "asc" }, ...(model === "user" ? { select: { id: true, username: true, passwordHash: true, isAdmin: true, createdAt: true } } : {}) });
       }
+      result.visits = await db.roomReactionVisit.findMany({ orderBy: { userId: "asc" } });
+      result.reads = await db.reactionRead.findMany({ orderBy: { userId: "asc" } });
       return result;
     }
     const before = await snapshot();
@@ -93,11 +101,14 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       options: '["A","B"]', askerAnswer: "[0,1]",
     } });
     assert.equal(newQuestion.type, "MULTIPLE_SELECT");
-    assert.equal(await db.roomReactionVisit.count(), 0);
-    assert.equal(await db.reactionRead.count(), 0);
-    await db.roomReactionVisit.create({ data: { userId: b.id, roomId: room.id } });
-    const reaction = await db.reaction.findFirst({ where: { questionId: question.id } });
-    await db.reactionRead.create({ data: { userId: b.id, reactionId: reaction.id } });
+    assert.equal(await db.recoveryToken.count(), 0);
+    const preservedUser = await db.user.findUnique({ where: { id: a.id } });
+    assert.equal(preservedUser.email, null);
+    assert.equal(preservedUser.emailVerifiedAt, null);
+    assert.equal(preservedUser.sessionVersion, 0);
+    assert.equal(await db.roomReactionVisit.count(), 1);
+    assert.equal(await db.reactionRead.count(), 1);
+
     succeeded(command(["scripts/migrate-deploy.mjs"], ctx.url));
     assert.equal(await db.reactionRead.count(), 1);
     assert.deepEqual((await snapshot()).reaction, before.reaction);

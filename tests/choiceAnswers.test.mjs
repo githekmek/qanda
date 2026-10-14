@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseMultipleAnswer, answersMatch, answerLabels } from "../src/lib/choiceAnswers.mjs";
+import { parseMultipleAnswer, answersMatch, answerLabels, matchingAnswerPositions } from "../src/lib/choiceAnswers.mjs";
 
 test("multiple answers require unique integer indices within the available options", () => {
   assert.deepEqual(parseMultipleAnswer("[4,0,2]", 5), [0,2,4]);
@@ -33,4 +33,12 @@ test("eight options support the last option and every selection without changing
   assert.equal(answersMatch("MULTIPLE_SELECT", "[7,0]", "[0,7]", 8), true);
   assert.deepEqual(answerLabels("MULTIPLE_SELECT", options, "[7,0]"), ["A","H"]);
   assert.deepEqual(answerLabels("MULTIPLE_CHOICE", options, "7"), ["H"]);
+});
+
+test("individual matches use option indices and include a single shared selection", () => {
+  assert.deepEqual(matchingAnswerPositions("[2,0]", "[0,1]", 3), [true, false]);
+  assert.deepEqual(matchingAnswerPositions("[0,1]", "[2,0]", 3), [true, false]);
+  assert.deepEqual(matchingAnswerPositions("[1]", "[0,1]", 2), [true]);
+  assert.deepEqual(matchingAnswerPositions("[0]", "[1]", 2), [false]);
+  assert.deepEqual(matchingAnswerPositions("[0,1]", undefined, 2), [false, false]);
 });

@@ -214,3 +214,55 @@ ein nicht bestätigter Kommentar kann beim nächsten Besuch erneut als neu ersch
 Migration `20261013000000_reaction_reads` ergänzt ausschließlich zwei Tabellen und
 Indizes. Bestehende Nutzer, Räume, Einladungen, Fragen, Antworten und Reaktionen
 bleiben unverändert. Vorschau wie bisher mit eigenem Neon-Branch prüfen.
+
+### Gemeinsame Einzelantworten
+
+Bei Mehrfachauswahl erhält jede von beiden gewählte Option in beiden Antwortzeilen
+einen grünen Haken mit dem zugänglichen Text „Von beiden gewählt“. Verglichen werden
+Optionsindizes, damit gleiche Beschriftungen nicht irrtümlich gleichgesetzt werden.
+Die Kennzeichnung „gleich“ für vollständig identische Antworten bleibt erhalten.
+
+### Passwortreset mit Brevo
+
+Bestehende und neue Nutzer können unter **Konto** mit ihrem aktuellen Passwort eine
+E-Mail-Adresse hinterlegen. Erst nach Bestätigung des einmaligen Links wird sie
+gespeichert bzw. eine bisherige Adresse ersetzt. Die Registrierung bleibt kompatibel;
+ohne bestätigte Adresse ist ein E-Mail-Reset nicht möglich.
+
+Für jedes Vercel-Environment separat konfigurieren:
+- `BREVO_API_KEY`: Brevo API-Schlüssel (kein SMTP-Passwort; niemals NEXT_PUBLIC).
+- `BREVO_SENDER_EMAIL`: in Brevo bestätigter Absender.
+- `APP_URL`: HTTPS-Ursprung der jeweiligen App ohne Pfad, Query oder Fragment.
+  Produktion: `https://qanda-psi.vercel.app`; Preview: tatsächliche Preview-Adresse.
+  Preview niemals mit der Produktionsadresse konfigurieren.
+- `DATABASE_URL`: weiterhin pro Environment getrennt auf den richtigen Neon-Branch.
+
+Ohne diese drei Mail-Einstellungen bleiben Login, Räume und Spiele nutzbar.
+Der Versand ist dann sichtbar deaktiviert. Nach dem Setzen der Variablen neu deployen.
+Bei Freemail-Absendern kann Brevo die Domain durch `brevosend.com` ersetzen; Absender
+bestätigen, Transaktionsversand freischalten lassen und Zustellung im echten Postfach prüfen.
+Keine produktiven API-Schlüssel in Tests oder Git hinterlegen.
+
+Reset-Anfragen antworten neutral. Der Versand erfolgt nach der Antwort über Next.js
+`after`, um die Existenz eines Kontos nicht anhand von Versandlatenz offenzulegen.
+Links gelten 30 Minuten, enthalten 256 Bit Zufall und werden ausschließlich als
+SHA-256-Hash gespeichert. Tokens stehen im URL-Fragment, nicht in Querystrings,
+und werden nur durch explizites Absenden verbraucht (Mail-Linkscanner verbrauchen sie nicht).
+Nach erfolgreichem Reset sind alle bisherigen Sitzungen und offenen Links ungültig.
+Ein Versionswert von 0 erhält alte Sitzungscookies bis zum ersten Reset.
+
+Limits: pro Adresse bzw. Konto 3 Versandanforderungen / 15 Minuten, zusätzlich
+30 Recovery-Anfragen / 15 Minuten je vertrauenswürdiger Vercel-IP und maximal
+100 Versandanforderungen / 24 Stunden je Datenbank. Brevo-Kontingente sind über
+Preview und Produktion gemeinsam zu berücksichtigen. Bei Versandfehlern keine
+Tokens oder Adressen protokollieren; fehlgeschlagene Links werden verworfen.
+Abgelaufene Tokens sind ungültig und werden beim nächsten Versand für denselben
+Kontozweck ersetzt.
+
+Migration `20261014000000_account_recovery` ergänzt nullable E-Mail-Felder,
+eine Sitzungsversionsnummer (Standard 0) und die Token-Tabelle. Keine Löschung,
+kein Zurücksetzen von Konten oder Spieldaten. Migrationstests vergleichen bestehende
+Konten, Passwort-Hashes, Räume, Fragen, Antworten, Kommentare und Gelesen-Stände.
+Browser- und HTTP-Tests verwenden ausschließlich einen lokalen Brevo-Ersatz,
+der nur per Test-Startoption geladen wird; der App-Code verwendet immer Brevos
+festen HTTPS-Endpunkt. Ein echter Zustelltest bleibt nach Einrichtung erforderlich.

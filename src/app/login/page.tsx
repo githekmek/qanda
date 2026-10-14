@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatAccessCode } from "@/lib/codeFormat";
@@ -157,6 +158,7 @@ function LoginForm() {
             {loading ? "Bitte warten…" : mode === "login" ? "Anmelden" : "Konto erstellen"}
           </button>
         </form>
+        {mode === "login" && <Link href="/passwort-vergessen" className="mt-4 block text-center text-sm underline">Passwort vergessen?</Link>}
       </div>
     </div>
   );

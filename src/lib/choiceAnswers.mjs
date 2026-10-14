@@ -36,3 +36,13 @@ export function answerLabels(type, options, value) {
   if (type === "MULTIPLE_CHOICE" && options) return [options[Number(value)] ?? ""];
   return [value];
 }
+
+/** Matches option identities, not labels (two options may have the same text).
+ * @param {string | undefined} value @param {string | undefined} other @param {number} optionCount
+ * @returns {boolean[]}
+ */
+export function matchingAnswerPositions(value, other, optionCount) {
+  const selected = value === undefined ? [] : (parseMultipleAnswer(value, optionCount) ?? []);
+  const shared = new Set(other === undefined ? [] : (parseMultipleAnswer(other, optionCount) ?? []));
+  return selected.map((index) => shared.has(index));
+}
