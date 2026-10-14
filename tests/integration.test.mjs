@@ -26,7 +26,7 @@ async function startServer(url) {
   const port = socket.address().port;
   await new Promise((resolve) => socket.close(resolve));
   const child = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "-p", String(port)], {
-    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0", BREVO_API_KEY: "isolated-test-key", BREVO_SENDER_EMAIL: "sender@example.test", APP_URL: "https://qanda.example.test", TEST_MAIL_URL: mailUrl, NODE_OPTIONS: "--import=" + require.resolve("./mockBrevo.mjs") },
+    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0", RESEND_API_KEY: "isolated-test-key", RESEND_FROM_EMAIL: "sender@example.test", APP_URL: "https://qanda.example.test", TEST_MAIL_URL: mailUrl, NODE_OPTIONS: "--import=" + require.resolve("./mockResend.mjs") },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let logs = "";
@@ -61,8 +61,18 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     let body = "";
     for await (const chunk of req) body += chunk;
     if (rejectMail) { res.writeHead(503); res.end("{}"); return; }
-    mails.push(JSON.parse(body));
-    res.writeHead(201, { "Content-Type": "application/json" }); res.end('{"messageId":"test"}');
+    const message = JSON.parse(body);
+    // Reject malformed requests so an incorrect provider contract fails recovery tests.
+    if (req.method !== "POST" || req.headers.authorization !== "Bearer isolated-test-key" ||
+        req.headers["content-type"] !== "application/json" ||
+        message.from !== "Q&A <sender@example.test>" ||
+        !Array.isArray(message.to) || message.to.length !== 1 || typeof message.to[0] !== "string" ||
+        typeof message.subject !== "string" || typeof message.text !== "string" ||
+        "sender" in message || "textContent" in message) {
+      res.writeHead(400); res.end('{"error":"Invalid Resend request"}'); return;
+    }
+    mails.push(message);
+    res.writeHead(201, { "Content-Type": "application/json" }); res.end('{"id":"test"}');
   });
   mailServer.listen(0, "127.0.0.1");
   await once(mailServer, "listening");
@@ -618,13 +628,13 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
 
   async function waitMail(email, subject) {
     for (let i = 0; i < 100; i++) {
-      const match = mails.findLast((mail) => mail.to[0].email === email && mail.subject.includes(subject));
+      const match = mails.findLast((mail) => mail.to[0] === email && mail.subject.includes(subject));
       if (match) return match;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     assert.fail("No mail received for " + email);
   }
-  const mailToken = (mail) => mail.textContent.match(/#token=([a-f0-9]{64})/)[1];
+  const mailToken = (mail) => mail.text.match(/#token=([a-f0-9]{64})/)[1];
   const tokenHash = (token) => createHash("sha256").update(token).digest("hex");
 
   await t.test("email verification and one-use password reset preserve game data and revoke old sessions", async () => {

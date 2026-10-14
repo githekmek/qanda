@@ -222,7 +222,7 @@ einen grünen Haken mit dem zugänglichen Text „Von beiden gewählt“. Vergli
 Optionsindizes, damit gleiche Beschriftungen nicht irrtümlich gleichgesetzt werden.
 Die Kennzeichnung „gleich“ für vollständig identische Antworten bleibt erhalten.
 
-### Passwortreset mit Brevo
+### Passwortreset mit Resend
 
 Bestehende und neue Nutzer können unter **Konto** mit ihrem aktuellen Passwort eine
 E-Mail-Adresse hinterlegen. Erst nach Bestätigung des einmaligen Links wird sie
@@ -230,8 +230,8 @@ gespeichert bzw. eine bisherige Adresse ersetzt. Die Registrierung bleibt kompat
 ohne bestätigte Adresse ist ein E-Mail-Reset nicht möglich.
 
 Für jedes Vercel-Environment separat konfigurieren:
-- `BREVO_API_KEY`: Brevo API-Schlüssel (kein SMTP-Passwort; niemals NEXT_PUBLIC).
-- `BREVO_SENDER_EMAIL`: in Brevo bestätigter Absender.
+- `RESEND_API_KEY`: Resend API-Schlüssel (kein SMTP-Passwort; niemals NEXT_PUBLIC).
+- `RESEND_FROM_EMAIL`: reine Absenderadresse einer in Resend verifizierten eigenen Domain (z. B. `konto@example.com`).
 - `APP_URL`: HTTPS-Ursprung der jeweiligen App ohne Pfad, Query oder Fragment.
   Produktion: `https://qanda-psi.vercel.app`; Preview: tatsächliche Preview-Adresse.
   Preview niemals mit der Produktionsadresse konfigurieren.
@@ -239,8 +239,15 @@ Für jedes Vercel-Environment separat konfigurieren:
 
 Ohne diese drei Mail-Einstellungen bleiben Login, Räume und Spiele nutzbar.
 Der Versand ist dann sichtbar deaktiviert. Nach dem Setzen der Variablen neu deployen.
-Bei Freemail-Absendern kann Brevo die Domain durch `brevosend.com` ersetzen; Absender
-bestätigen, Transaktionsversand freischalten lassen und Zustellung im echten Postfach prüfen.
+Für den Versand an andere Nutzer ist eine eigene Domain mit Zugriff auf ihre DNS-Einstellungen
+erforderlich. Eine Gmail-, iCloud- oder Proton-Adresse und die Vercel-App-Subdomain
+können dafür nicht als eigene Absenderdomain verifiziert werden.
+Ohne eigene Domain ist nur ein Test mit `RESEND_FROM_EMAIL=onboarding@resend.dev`
+an die E-Mail-Adresse des Resend-Kontos möglich.
+Siehe [Resend-Testbeschränkung](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain).
+Nach Domain-Verifizierung einen API-Schlüssel mit Versandberechtigung erstellen und
+direkt in Vercel hinterlegen. Alte `BREVO_*`-Variablen werden nicht mehr verwendet.
+Echte Zustellung und Linkziel zuerst in Preview prüfen; danach Produktion separat konfigurieren.
 Keine produktiven API-Schlüssel in Tests oder Git hinterlegen.
 
 Reset-Anfragen antworten neutral. Der Versand erfolgt nach der Antwort über Next.js
@@ -253,7 +260,7 @@ Ein Versionswert von 0 erhält alte Sitzungscookies bis zum ersten Reset.
 
 Limits: pro Adresse bzw. Konto 3 Versandanforderungen / 15 Minuten, zusätzlich
 30 Recovery-Anfragen / 15 Minuten je vertrauenswürdiger Vercel-IP und maximal
-100 Versandanforderungen / 24 Stunden je Datenbank. Brevo-Kontingente sind über
+100 Versandanforderungen / 24 Stunden je Datenbank. Resend-Kontingente sind über
 Preview und Produktion gemeinsam zu berücksichtigen. Bei Versandfehlern keine
 Tokens oder Adressen protokollieren; fehlgeschlagene Links werden verworfen.
 Abgelaufene Tokens sind ungültig und werden beim nächsten Versand für denselben
@@ -263,6 +270,6 @@ Migration `20261014000000_account_recovery` ergänzt nullable E-Mail-Felder,
 eine Sitzungsversionsnummer (Standard 0) und die Token-Tabelle. Keine Löschung,
 kein Zurücksetzen von Konten oder Spieldaten. Migrationstests vergleichen bestehende
 Konten, Passwort-Hashes, Räume, Fragen, Antworten, Kommentare und Gelesen-Stände.
-Browser- und HTTP-Tests verwenden ausschließlich einen lokalen Brevo-Ersatz,
-der nur per Test-Startoption geladen wird; der App-Code verwendet immer Brevos
+Browser- und HTTP-Tests verwenden ausschließlich einen lokalen Resend-Ersatz,
+der nur per Test-Startoption geladen wird; der App-Code verwendet immer Resends
 festen HTTPS-Endpunkt. Ein echter Zustelltest bleibt nach Einrichtung erforderlich.
