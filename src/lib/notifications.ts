@@ -31,8 +31,8 @@ export async function dispatchNotifications() {
   const config = recoveryConfig();
   if (!config) return { sent: 0, configured: false };
   let sent = 0;
-  // Bounded work: at most three SMTP operations per invocation.
-  for (let batch = 0; batch < 3; batch++) {
+  // Bounded work: at most two SMTP operations per invocation.
+  for (let batch = 0; batch < 2; batch++) {
     const now = new Date();
     const first = await prisma.notification.findFirst({
       where: { dueAt: { lte: now }, lockedUntil: { lte: now } }, orderBy: { dueAt: "asc" },

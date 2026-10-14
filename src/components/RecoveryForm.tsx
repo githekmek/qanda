@@ -22,7 +22,6 @@ export default function RecoveryForm({ mode, embedded = false }: { mode: Mode; e
       tokenLoaded.current = true;
       const value = new URLSearchParams(window.location.hash.slice(1)).get("token") ?? "";
       // The token is kept in component memory only, never in storage or a query string.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setToken(value);
       window.history.replaceState(null, "", window.location.pathname);
     }

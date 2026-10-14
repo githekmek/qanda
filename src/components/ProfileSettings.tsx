@@ -26,7 +26,7 @@ export default function ProfileSettings({ initial }: { initial: Profile }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Speichern fehlgeschlagen.");
       setProfile(data);
-      document.documentElement.dataset.theme = data.theme;
+      document.documentElement.setAttribute("data-theme", data.theme);
       setStatus("Gespeichert");
       router.refresh();
     } catch (error) {
