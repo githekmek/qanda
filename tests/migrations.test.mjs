@@ -43,8 +43,11 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
   try {
     await installOld(ctx.url);
     const db = ctx.db;
-    const a = await db.user.create({ data: { username: "existing_a", passwordHash: "unchanged_hash_a", isAdmin: true }, select: { id: true } });
-    const b = await db.user.create({ data: { username: "existing_b", passwordHash: "unchanged_hash_b" }, select: { id: true } });
+    // Seed the old schema without the new Prisma client's default sessionVersion.
+    await db.$executeRaw`INSERT INTO "User" ("id", "username", "passwordHash", "isAdmin") VALUES
+      ('existing-a', 'existing_a', 'unchanged_hash_a', true),
+      ('existing-b', 'existing_b', 'unchanged_hash_b', false)`;
+    const a = { id: "existing-a" }, b = { id: "existing-b" };
     const room = await db.room.create({ data: {
       name: "Bestehender Raum", inviteCode: "ORIGINALINVITE", playerAId: a.id,
       playerBId: b.id, currentAskerId: b.id,
