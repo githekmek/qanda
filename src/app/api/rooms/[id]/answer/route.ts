@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { enqueueNotification, dispatchNotifications } from "@/lib/notifications";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { parseMultipleAnswer } from "@/lib/choiceAnswers.mjs";
 import { getSession } from "@/lib/auth";
@@ -9,6 +10,8 @@ import {
   serializeQuestionForViewer,
   MAX_TEXT_LENGTH,
 } from "@/lib/game";
+
+export const maxDuration = 60;
 
 const answerSchema = z.object({
   questionId: z.string().min(1),
@@ -28,7 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   try {
-    return await serializable(async (tx) => {
+    const response = await serializable(async (tx) => {
       const { id } = await params;
       const room = await findRoomForMember(id, session.userId, tx);
       if (!room) {
@@ -84,9 +87,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         data: { currentAskerId: session.userId },
       });
 
+      await enqueueNotification(tx, session.userId, room.id, "turn", question.id + ":answered");
       const updated = await loadQuestionWithRelations(question.id, tx);
       return NextResponse.json(serializeQuestionForViewer(updated!, session.userId));
     });
+    if (response.ok) after(async () => { await dispatchNotifications().catch(() => { console.error("Notification dispatch deferred."); }); });
+    return response;
   } catch (error) {
     return mutationError(error);
   }

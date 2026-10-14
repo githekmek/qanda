@@ -6,7 +6,7 @@ import Link from "next/link";
 type Mode = "account" | "request" | "verify" | "reset";
 const inputStyle = "w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700";
 
-export default function RecoveryForm({ mode }: { mode: Mode }) {
+export default function RecoveryForm({ mode, embedded = false }: { mode: Mode; embedded?: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -57,12 +57,13 @@ export default function RecoveryForm({ mode }: { mode: Mode }) {
 
   const title = mode === "account" ? "E-Mail für Passwortreset" : mode === "request" ? "Passwort vergessen?"
     : mode === "verify" ? "E-Mail bestätigen" : "Neues Passwort setzen";
+  const Container = embedded ? "div" : "main";
   return (
-    <main className="mx-auto w-full max-w-md px-4 py-8">
-      <Link href={mode === "account" ? "/" : "/login"} className="text-sm text-zinc-500 underline">
+    <Container className={embedded ? "mt-3" : "mx-auto w-full max-w-md px-4 py-8"}>
+      {!embedded && <Link href={mode === "account" ? "/" : "/login"} className="text-sm text-zinc-500 underline">
         {mode === "account" ? "← Übersicht" : "Zur Anmeldung"}
-      </Link>
-      <h1 className="mt-5 text-xl font-semibold">{title}</h1>
+      </Link>}
+      {!embedded && <h1 className="mt-5 text-xl font-semibold">{title}</h1>}
       {mode === "account" && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">
         {account?.verified ? `Bestätigte Adresse: ${account.email}` : "Hinterlege eine E-Mail-Adresse und bestätige sie, damit du dein Passwort bei Bedarf zurücksetzen kannst."}
         {" "}Eine neue Adresse ersetzt die bisherige erst nach der Bestätigung.
@@ -93,6 +94,6 @@ export default function RecoveryForm({ mode }: { mode: Mode }) {
       {error && <p role="alert" className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>}
       {message && <p role="status" className="mt-4 text-sm text-green-700 dark:text-green-400">{message}</p>}
       {success && <Link href={mode === "verify" ? "/konto" : "/login"} className="mt-4 inline-block underline">{mode === "verify" ? "Zum Konto" : "Jetzt anmelden"}</Link>}
-    </main>
+    </Container>
   );
 }

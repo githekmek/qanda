@@ -26,7 +26,7 @@ async function startServer(url) {
   const port = socket.address().port;
   await new Promise((resolve) => socket.close(resolve));
   const child = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "-p", String(port)], {
-    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0", RESEND_API_KEY: "isolated-test-key", RESEND_FROM_EMAIL: "sender@example.test", APP_URL: "https://qanda.example.test", TEST_MAIL_URL: mailUrl, NODE_OPTIONS: "--import=" + require.resolve("./mockResend.mjs") },
+    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0", GMAIL_USER: "sender@gmail.com", GMAIL_APP_PASSWORD: "isolated-test-password", CRON_SECRET: "isolated-cron-secret-at-least-32-characters", APP_URL: "https://qanda.example.test", TEST_MAIL_URL: mailUrl, NODE_OPTIONS: "--import=" + require.resolve("./mockGmail.mjs") },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let logs = "";
@@ -65,11 +65,11 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     // Reject malformed requests so an incorrect provider contract fails recovery tests.
     if (req.method !== "POST" || req.headers.authorization !== "Bearer isolated-test-key" ||
         req.headers["content-type"] !== "application/json" ||
-        message.from !== "Q&A <sender@example.test>" ||
-        !Array.isArray(message.to) || message.to.length !== 1 || typeof message.to[0] !== "string" ||
+        message.from?.address !== "sender@gmail.com" || message.from?.name !== "Q&A" ||
+        !Array.isArray(message.to) || message.to.length !== 1 || typeof message.to[0]?.address !== "string" ||
         typeof message.subject !== "string" || typeof message.text !== "string" ||
         "sender" in message || "textContent" in message) {
-      res.writeHead(400); res.end('{"error":"Invalid Resend request"}'); return;
+      res.writeHead(400); res.end('{"error":"Invalid Gmail message"}'); return;
     }
     mails.push(message);
     res.writeHead(201, { "Content-Type": "application/json" }); res.end('{"id":"test"}');
@@ -628,7 +628,7 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
 
   async function waitMail(email, subject) {
     for (let i = 0; i < 100; i++) {
-      const match = mails.findLast((mail) => mail.to[0] === email && mail.subject.includes(subject));
+      const match = mails.findLast((mail) => mail.to[0].address === email && mail.subject.includes(subject));
       if (match) return match;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
@@ -760,6 +760,141 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
       await page.goto(servers[0].origin + "/konto");
       await page.waitForURL("**/login");
+      assert.deepEqual(errors, []);
+    } finally { await browser.close(); }
+  });
+
+  async function dispatch(server = 0) {
+    const response = await fetch(servers[server].origin + "/api/notifications/dispatch", {
+      headers: { Authorization: "Bearer isolated-cron-secret-at-least-32-characters" },
+    });
+    return { status: response.status, body: await response.json() };
+  }
+  async function verifiedUser() {
+    const a = await user();
+    return db.user.update({ where: { id: a.id }, data: { email: a.username + "@example.test", emailVerifiedAt: new Date() } });
+  }
+
+  await t.test("profile settings are private, opt-in and reject unverified email or injected fields", async () => {
+    const a = await user(), b = await verifiedUser();
+    assert.equal((await request("/api/profile", { method: "GET" })).status, 401);
+    let p = await request("/api/profile", { actor: a, method: "GET" });
+    assert.equal(p.body.theme, "standard");
+    assert.equal(p.body.notifyTurn, false);
+    assert.equal(p.body.notifyComments, false);
+    assert.equal(p.body.passwordHash, undefined);
+    assert.equal((await request("/api/profile", { actor: a, method: "PATCH", data: { notifyTurn: true } })).status, 400);
+    assert.equal((await request("/api/profile", { actor: a, method: "PATCH", data: { theme: "colorful" } })).status, 200);
+    assert.equal((await request("/api/profile", { actor: a, method: "PATCH", data: { userId: b.id, theme: "dark" } })).status, 400);
+    assert.equal((await request("/api/profile", { actor: a, method: "PATCH", data: { theme: "invalid" } })).status, 400);
+    p = await request("/api/profile", { actor: b, method: "PATCH", data: { notifyTurn: true } });
+    assert.equal(p.body.notifyTurn, true);
+    assert.equal(p.body.notifyComments, false);
+    assert.equal((await request("/api/profile", { actor: a, method: "GET", server: 1 })).body.theme, "colorful");
+    const badOrigin = await fetch(servers[0].origin + "/api/profile", {
+      method: "PATCH", headers: { Cookie: await cookie(a), Origin: "https://evil.example", "Content-Type": "application/json" },
+      body: JSON.stringify({ theme: "dark" }),
+    });
+    assert.equal(badOrigin.status, 403);
+  });
+
+  await t.test("turn mail targets the next player without revealing private game content", async () => {
+    const a = await verifiedUser(), b = await verifiedUser(), r = await room(a, b);
+    await request("/api/profile", { actor: b, method: "PATCH", data: { notifyTurn: true } });
+    const asked = await request("/api/rooms/" + r.id + "/ask", { actor: a,
+      data: { type: "TEXT", text: "PRIVATE QUESTION", askerAnswer: "PRIVATE ANSWER" } });
+    assert.equal(asked.status, 200);
+    const mail = await waitMail(b.email, "am Zug");
+    assert.ok(mail.text.includes("/room/" + r.id));
+    assert.ok(!mail.text.includes("PRIVATE"));
+    assert.equal(mails.filter(m => m.to[0].address === a.email).length, 0);
+    assert.equal((await dispatch()).status, 200);
+    assert.equal(mails.filter(m => m.to[0].address === b.email).length, 1);
+    const answered = await request("/api/rooms/" + r.id + "/answer", { actor: b, data: { questionId: asked.body.id, value: "PRIVATE RESPONSE" } });
+    assert.equal(answered.status, 200);
+    for (let i = 0; i < 100 && mails.filter(m => m.to[0].address === b.email).length < 2; i++) await new Promise(r => setTimeout(r, 50));
+    assert.equal(mails.filter(m => m.to[0].address === b.email).length, 2, "the responder can now ask");
+  });
+
+  await t.test("comment notifications batch foreign comments, survive SMTP failure and have single concurrent claim", async () => {
+    const a = await verifiedUser(), b = await verifiedUser(), r = await room(a, b);
+    await request("/api/profile", { actor: b, method: "PATCH", data: { notifyComments: true } });
+    const q = await db.question.create({ data: { roomId: r.id, askerId: a.id, type: "TEXT",
+      text: "Private question", askerAnswer: "Private answer", status: "ANSWERED" } });
+    for (const actor of [a, a, b]) {
+      const res = await request("/api/rooms/" + r.id + "/reaction", { actor, data: { questionId: q.id, text: "PRIVATE COMMENT" } });
+      assert.equal(res.status, 200);
+    }
+    assert.equal(await db.notification.count({ where: { userId: b.id } }), 2);
+    assert.equal(await db.notification.count({ where: { userId: a.id } }), 0);
+    assert.equal(mails.filter(m => m.to[0].address === b.email).length, 0);
+    await db.notification.updateMany({ where: { userId: b.id }, data: { dueAt: new Date(0) } });
+    rejectMail = true;
+    try { assert.equal((await dispatch()).status, 200); } finally { rejectMail = false; }
+    assert.equal(await db.notification.count({ where: { userId: b.id } }), 2, "failed sends stay queued");
+    assert.equal(await db.reaction.count({ where: { questionId: q.id } }), 3);
+    await db.notification.updateMany({ where: { userId: b.id }, data: { dueAt: new Date(0) } });
+    await Promise.all([dispatch(0), dispatch(1)]);
+    const delivered = mails.filter(m => m.to[0].address === b.email);
+    assert.equal(delivered.length, 1);
+    assert.ok(delivered[0].subject.includes("Kommentare"));
+    assert.ok(!delivered[0].text.includes("PRIVATE"));
+    assert.equal(await db.notification.count({ where: { userId: b.id } }), 0);
+  });
+
+  await t.test("opting out cancels pending mails; archive and stale turns are suppressed; dispatch requires secret", async () => {
+    const a = await verifiedUser(), b = await verifiedUser(), r = await room(a, b);
+    await request("/api/profile", { actor: b, method: "PATCH", data: { notifyTurn: true, notifyComments: true } });
+    await db.notification.create({ data: { eventKey: "cancel-" + r.id, userId: b.id, roomId: r.id, kind: "comment", dueAt: new Date(0) } });
+    await request("/api/profile", { actor: b, method: "PATCH", data: { notifyComments: false } });
+    assert.equal(await db.notification.count({ where: { userId: b.id } }), 0);
+    assert.equal((await request("/api/profile", { actor: b, method: "GET" })).body.notifyTurn, true);
+    await db.notification.create({ data: { eventKey: "stale-" + r.id, userId: b.id, roomId: r.id, kind: "turn", dueAt: new Date(0) } });
+    await dispatch();
+    assert.equal(mails.filter(m => m.to[0].address === b.email).length, 0);
+    await db.room.update({ where: { id: r.id }, data: { archivedAt: new Date(), currentAskerId: b.id } });
+    await db.notification.create({ data: { eventKey: "archive-" + r.id, userId: b.id, roomId: r.id, kind: "turn", dueAt: new Date(0) } });
+    await dispatch();
+    assert.equal(mails.filter(m => m.to[0].address === b.email).length, 0);
+    assert.equal((await fetch(servers[0].origin + "/api/notifications/dispatch")).status, 401);
+  });
+
+  await t.test("browser: all three themes persist across devices and preserve independent notification switches", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const { mkdir } = await import("node:fs/promises");
+    const browser = await chromium.launch();
+    try {
+      const a = await verifiedUser();
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const page = await context.newPage(), errors = [];
+      page.on("pageerror", e => errors.push(e.message));
+      await page.goto(servers[0].origin + "/konto");
+      for (const label of ["Wenn ich am Zug bin", "Bei neuen Kommentaren"]) {
+        assert.equal(await page.getByRole("switch", { name: label }).getAttribute("aria-checked"), "false");
+      }
+      await mkdir("test-results", { recursive: true });
+      for (const [name, theme] of [["Bunt", "colorful"], ["Dark", "dark"], ["Standard", "standard"]]) {
+        const saved = page.waitForResponse(res => res.url().endsWith("/api/profile") && res.request().method() === "PATCH");
+        await page.getByRole("button", { name, exact: false }).filter({ hasText: name }).click();
+        assert.equal((await saved).status(), 200);
+        await page.waitForFunction(value => document.documentElement.dataset.theme === value, theme);
+        await page.reload();
+        assert.equal(await page.locator("html").getAttribute("data-theme"), theme);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+        await page.screenshot({ path: "test-results/profile-" + theme + ".png", fullPage: true });
+      }
+      const saved = page.waitForResponse(res => res.url().endsWith("/api/profile") && res.request().method() === "PATCH");
+      await page.getByRole("switch", { name: "Wenn ich am Zug bin" }).click();
+      assert.equal((await saved).status(), 200);
+      await page.reload();
+      assert.equal(await page.getByRole("switch", { name: "Wenn ich am Zug bin" }).getAttribute("aria-checked"), "true");
+      assert.equal(await page.getByRole("switch", { name: "Bei neuen Kommentaren" }).getAttribute("aria-checked"), "false");
+      const other = await browser.newContext();
+      await other.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const otherPage = await other.newPage();
+      await otherPage.goto(servers[0].origin + "/konto");
+      assert.equal(await otherPage.getByRole("switch", { name: "Wenn ich am Zug bin" }).getAttribute("aria-checked"), "true");
       assert.deepEqual(errors, []);
     } finally { await browser.close(); }
   });

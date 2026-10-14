@@ -22,7 +22,8 @@
     "prisma": "^6.19.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "nodemailer": "10.1.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

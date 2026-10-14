@@ -1,8 +1,11 @@
-import { NextResponse } from "next/server";
+import { enqueueNotification, dispatchNotifications } from "@/lib/notifications";
+import { after, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { serializable, mutationError } from "@/lib/transaction";
 import { countActiveRooms, MAX_ROOMS_PER_USER } from "@/lib/rooms";
+
+export const maxDuration = 60;
 
 /** What the invited person sees before deciding to join. */
 export async function GET(_request: Request, { params }: { params: Promise<{ code: string }> }) {
@@ -33,7 +36,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ co
   }
 
   try {
-    return await serializable(async (tx) => {
+    const response = await serializable(async (tx) => {
       const { code } = await params;
 
       const room = await tx.room.findUnique({ where: { inviteCode: code } });
@@ -73,8 +76,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ co
         return NextResponse.json({ error: "Dieser Raum ist bereits vollständig" }, { status: 409 });
       }
 
+      await enqueueNotification(tx, room.currentAskerId, room.id, "turn", "joined:" + room.id);
       return NextResponse.json({ roomId: room.id });
     });
+    if (response.ok) after(async () => { await dispatchNotifications().catch(() => {}); });
+    return response;
   } catch (error) {
     return mutationError(error);
   }

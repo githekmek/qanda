@@ -1,26 +1,42 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) { @slot; }
+  @media (prefers-color-scheme: dark) {
+    &:where([data-theme="standard"], [data-theme="standard"] *) { @slot; }
+  }
 }
-
+:root { --background: #ffffff; --foreground: #171717; --profile-card: #ffffff; --profile-accent: #1d4ed8; --profile-selected: #e0e7ff; --profile-selected-text: #1e3a8a; }
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
-
+html[data-theme="dark"] {
+  --background: #111827; --foreground: #e5eaf4; --profile-card: #1e293b;
+  --profile-accent: #c4b5fd; --profile-selected: #c4b5fd; --profile-selected-text: #271547;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  html[data-theme="standard"] {
+    --background: #0a0a0a; --foreground: #ededed; --profile-card: #18181b;
+    --profile-accent: #a5b4fc; --profile-selected: #a5b4fc; --profile-selected-text: #172033;
   }
 }
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+html[data-theme="colorful"] {
+  --background: #f5efff; --foreground: #34204f; --profile-card: #fffcff;
+  --profile-accent: #6d28d9; --profile-selected: #ddd0ff; --profile-selected-text: #4c1d95;
+  --color-zinc-50: #faf5ff; --color-zinc-100: #f0e7fc; --color-zinc-200: #ded0ef;
+  --color-zinc-300: #c9b5e2; --color-zinc-400: #9277ad; --color-zinc-500: #75588e;
+  --color-zinc-600: #644579; --color-zinc-700: #553267; --color-zinc-800: #452453; --color-zinc-900: #59308a;
 }
+body { background: var(--background); color: var(--foreground); font-family: Arial, Helvetica, sans-serif; }
+.profile-card { background: var(--profile-card); box-shadow: 0 2px 8px #00000005; }
+.profile-link { color: var(--profile-accent); }
+.theme-selected { background: var(--profile-selected); color: var(--profile-selected-text); font-weight: 600; }
+.profile-switch { width: 48px; background: #64748b; }
+.profile-switch.is-on { background: #6d28d9; }
+html[data-theme="colorful"] .profile-email { background: #e4f8ed; }
+html[data-theme="colorful"] .profile-notifications { background: #fff0df; }
+button:not(:disabled), a { cursor: pointer; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid var(--profile-accent); outline-offset: 3px; }

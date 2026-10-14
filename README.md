@@ -222,7 +222,7 @@ einen grünen Haken mit dem zugänglichen Text „Von beiden gewählt“. Vergli
 Optionsindizes, damit gleiche Beschriftungen nicht irrtümlich gleichgesetzt werden.
 Die Kennzeichnung „gleich“ für vollständig identische Antworten bleibt erhalten.
 
-### Passwortreset mit Resend
+### Passwortreset mit Gmail
 
 Bestehende und neue Nutzer können unter **Konto** mit ihrem aktuellen Passwort eine
 E-Mail-Adresse hinterlegen. Erst nach Bestätigung des einmaligen Links wird sie
@@ -230,8 +230,8 @@ gespeichert bzw. eine bisherige Adresse ersetzt. Die Registrierung bleibt kompat
 ohne bestätigte Adresse ist ein E-Mail-Reset nicht möglich.
 
 Für jedes Vercel-Environment separat konfigurieren:
-- `RESEND_API_KEY`: Resend API-Schlüssel (kein SMTP-Passwort; niemals NEXT_PUBLIC).
-- `RESEND_FROM_EMAIL`: reine Absenderadresse einer in Resend verifizierten eigenen Domain (z. B. `konto@example.com`).
+- `GMAIL_APP_PASSWORD`: separates Google-App-Passwort nach Aktivierung der Zwei-Faktor-Authentifizierung (niemals NEXT_PUBLIC).
+- `GMAIL_USER`: die vollständige Gmail-Adresse des eigenen App-Versandkontos.
 - `APP_URL`: HTTPS-Ursprung der jeweiligen App ohne Pfad, Query oder Fragment.
   Produktion: `https://qanda-psi.vercel.app`; Preview: tatsächliche Preview-Adresse.
   Preview niemals mit der Produktionsadresse konfigurieren.
@@ -239,14 +239,12 @@ Für jedes Vercel-Environment separat konfigurieren:
 
 Ohne diese drei Mail-Einstellungen bleiben Login, Räume und Spiele nutzbar.
 Der Versand ist dann sichtbar deaktiviert. Nach dem Setzen der Variablen neu deployen.
-Für den Versand an andere Nutzer ist eine eigene Domain mit Zugriff auf ihre DNS-Einstellungen
-erforderlich. Eine Gmail-, iCloud- oder Proton-Adresse und die Vercel-App-Subdomain
-können dafür nicht als eigene Absenderdomain verifiziert werden.
-Ohne eigene Domain ist nur ein Test mit `RESEND_FROM_EMAIL=onboarding@resend.dev`
-an die E-Mail-Adresse des Resend-Kontos möglich.
-Siehe [Resend-Testbeschränkung](https://resend.com/docs/knowledge-base/403-error-resend-dev-domain).
-Nach Domain-Verifizierung einen API-Schlüssel mit Versandberechtigung erstellen und
-direkt in Vercel hinterlegen. Alte `BREVO_*`-Variablen werden nicht mehr verwendet.
+Der Versand verwendet Nodemailer über `smtp.gmail.com:465` mit TLS.
+Eine eigene Domain ist nicht erforderlich. Ein separates Gmail-Konto für die App verwenden.
+App-Passwörter müssen für das Konto verfügbar sein; das normale Google-Passwort genügt nicht.
+Gmail kann Zustellungen begrenzen oder blockieren. Bei Änderung des Google-Passworts
+muss das widerrufene App-Passwort in Vercel ersetzt werden.
+Alte `RESEND_*`- und `BREVO_*`-Variablen werden nicht mehr verwendet.
 Echte Zustellung und Linkziel zuerst in Preview prüfen; danach Produktion separat konfigurieren.
 Keine produktiven API-Schlüssel in Tests oder Git hinterlegen.
 
@@ -260,7 +258,7 @@ Ein Versionswert von 0 erhält alte Sitzungscookies bis zum ersten Reset.
 
 Limits: pro Adresse bzw. Konto 3 Versandanforderungen / 15 Minuten, zusätzlich
 30 Recovery-Anfragen / 15 Minuten je vertrauenswürdiger Vercel-IP und maximal
-100 Versandanforderungen / 24 Stunden je Datenbank. Resend-Kontingente sind über
+100 Versandanforderungen / 24 Stunden je Datenbank. Gmail-Kontingente sind über
 Preview und Produktion gemeinsam zu berücksichtigen. Bei Versandfehlern keine
 Tokens oder Adressen protokollieren; fehlgeschlagene Links werden verworfen.
 Abgelaufene Tokens sind ungültig und werden beim nächsten Versand für denselben
@@ -270,6 +268,48 @@ Migration `20261014000000_account_recovery` ergänzt nullable E-Mail-Felder,
 eine Sitzungsversionsnummer (Standard 0) und die Token-Tabelle. Keine Löschung,
 kein Zurücksetzen von Konten oder Spieldaten. Migrationstests vergleichen bestehende
 Konten, Passwort-Hashes, Räume, Fragen, Antworten, Kommentare und Gelesen-Stände.
-Browser- und HTTP-Tests verwenden ausschließlich einen lokalen Resend-Ersatz,
-der nur per Test-Startoption geladen wird; der App-Code verwendet immer Resends
-festen HTTPS-Endpunkt. Ein echter Zustelltest bleibt nach Einrichtung erforderlich.
+Browser- und HTTP-Tests verwenden ausschließlich einen lokalen Versand-Ersatz,
+der nur per Test-Startoption Nodemailer ersetzt und TLS-/Gmail-Konfiguration sowie Nachrichtendaten prüft;
+der App-Code verwendet immer den festen Gmail-SMTP-Endpunkt. Ein echter Zustelltest bleibt nach Einrichtung erforderlich.
+
+### Profil, Darstellung und freiwillige Benachrichtigungen
+
+`/konto` bietet die bestätigte E-Mail-Adresse, zwei unabhängige Opt-in-Schalter und
+Standard/Bunt/Dark. Standard folgt wie bisher der Geräteeinstellung; Bunt und Dark
+sind explizit. Einstellungen sind pro Konto gespeichert. Ohne bestätigte Adresse
+oder Versandkonfiguration können Benachrichtigungen nicht eingeschaltet werden.
+Bei Bestätigung einer neuen Adresse werden beide Schalter ausgeschaltet und alte
+Versandaufträge entfernt; der Nutzer kann für die neue Adresse erneut zustimmen.
+
+Migration `20261014010000_profile_notifications` ergänzt ausschließlich drei
+User-Felder (Standard, false, false) und eine Versandtabelle. Keine bestehenden
+Räume, Kommentare oder sonstigen Spielinhalte werden gelöscht oder neu angelegt.
+Aktivieren erzeugt keine Benachrichtigungen für historische Ereignisse.
+
+Beim Beitritt kann der erste Fragende eine Zug-Mail erhalten; nach einer neuen
+Frage der Antwortende; nach der Antwort darf derselbe Spieler die nächste Frage
+stellen. Neue fremde Kommentare werden pro Empfänger und Raum nach mindestens
+fünf Minuten gesammelt. Inhalte, Spielernamen und Raumnamen stehen nicht in Mails,
+nur ein Hinweis sowie Links zum privaten Raum und den Einstellungen.
+
+Versandaufträge entstehen atomar mit dem Ereignis. Nach Spielaktionen versucht
+`after` fällige Aufträge abzuarbeiten. Für zuverlässige Zustellung ohne weitere
+App-Besuche ist zusätzlich ein Zeitgeber erforderlich:
+- `GET /api/notifications/dispatch`, Header `Authorization: Bearer <CRON_SECRET>`.
+- `CRON_SECRET` mindestens 32 zufällige Zeichen, separat je Umgebung.
+- Empfohlenes Intervall: fünf Minuten. Vercel Hobby erlaubt nur tägliche Cron-Läufe;
+  deshalb wird kein mit Hobby inkompatibler Minutentakt automatisch eingerichtet.
+  Auf Pro kann ein Vercel-Cron verwendet werden, auf Hobby ein externer Zeitgeber.
+- Preview-Versand separat über die Preview-Adresse testen, niemals mit Produktions-DB.
+- Ohne Zeitgeber kann der Versand bis zur nächsten Spielaktion warten.
+  Die Einrichtung des Zeitgebers ist daher vor produktiver Freigabe erforderlich.
+
+Konkurrierende Worker beanspruchen Aufträge mit einer Datenbanksperrfrist.
+Deaktivierte Mailtypen, archivierte Räume, veraltete Züge und ausschließlich
+über 24 Stunden alte Aufträge werden verworfen. SMTP-Fehler werden mit wachsendem
+Abstand erneut versucht; ein abgebrochener Worker wird nach fünf Minuten freigegeben.
+SMTP bietet keine Exactly-once-Garantie: Wird eine Mail angenommen und die Bestätigung
+geht verloren, ist bei Wiederholung ein Duplikat möglich (stabile Message-ID).
+Ein bereits an SMTP übergebener Versand kann durch Ausschalten nicht zurückgerufen werden.
+Höchstens 10 Benachrichtigungsmails pro Nutzer/Stunde und 100 pro DB/24 Stunden;
+Recovery hat sein separates 100er-Budget. Preview und Produktion teilen das Gmail-Kontingent.

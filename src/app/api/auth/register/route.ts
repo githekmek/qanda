@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { enqueueNotification, dispatchNotifications } from "@/lib/notifications";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import type { Prisma } from "@prisma/client";
@@ -6,6 +7,8 @@ import { prisma } from "@/lib/db";
 import { createSessionCookie } from "@/lib/auth";
 import { normalizeAccessCode } from "@/lib/codes";
 import { serializable, mutationError, RequestError } from "@/lib/transaction";
+
+export const maxDuration = 60;
 
 const registerSchema = z.object({
   username: z.string().trim().min(3, "Benutzername muss mindestens 3 Zeichen haben")
@@ -73,10 +76,13 @@ export async function POST(request: Request) {
           data: { playerBId: user.id },
         });
         if (claimed.count !== 1) throw new RequestError(409, "Diese Einladung ist nicht mehr verfügbar");
+        const joined = await tx.room.findUniqueOrThrow({ where: { id: gate.roomId } });
+        await enqueueNotification(tx, joined.currentAskerId, joined.id, "turn", "joined:" + joined.id);
       }
       return { ...user, roomId: gate.roomId };
     });
     await createSessionCookie({ userId: result.id, username: result.username });
+    after(async () => { await dispatchNotifications().catch(() => {}); });
     return NextResponse.json(result);
   } catch (error) {
     return mutationError(error);

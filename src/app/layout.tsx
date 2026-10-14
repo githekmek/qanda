@@ -1,3 +1,5 @@
+import { getSession } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -17,10 +19,13 @@ export const metadata: Metadata = {
   description: "Zwei-Spieler Frage-Antwort-Spiel: Stellt euch abwechselnd Fragen und deckt die Antworten gemeinsam auf.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const session = await getSession();
+  const user = session ? await prisma.user.findUnique({ where: { id: session.userId }, select: { theme: true } }) : null;
   return (
     <html
-      lang="en"
+      lang="de"
+      data-theme={user?.theme ?? "standard"}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

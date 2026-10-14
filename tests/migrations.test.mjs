@@ -109,6 +109,10 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     assert.equal(preservedUser.email, null);
     assert.equal(preservedUser.emailVerifiedAt, null);
     assert.equal(preservedUser.sessionVersion, 0);
+    assert.equal(preservedUser.theme, "standard");
+    assert.equal(preservedUser.notifyTurn, false);
+    assert.equal(preservedUser.notifyComments, false);
+    assert.equal(await db.notification.count(), 0);
     assert.equal(await db.roomReactionVisit.count(), 1);
     assert.equal(await db.reactionRead.count(), 1);
 

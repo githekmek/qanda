@@ -32,6 +32,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Verify Gmail transport package metadata
+        run: npm view nodemailer@10.1.1 dist --json
       - run: npm ci
       - run: npm run test:unit
       - run: npm run test:migrations
