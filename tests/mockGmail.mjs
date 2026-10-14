@@ -1,8 +1,9 @@
 // Only loaded in isolated integration child processes; never by the application.
+import esmNodemailer from "nodemailer";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const nodemailer = require("nodemailer");
-nodemailer.createTransport = (options) => {
+const createTransport = (options) => {
   if (options.host !== "smtp.gmail.com" || options.port !== 465 || options.secure !== true ||
       options.auth.user !== "sender@gmail.com" || options.auth.pass !== "isolated-test-password" ||
       options.disableFileAccess !== true || options.disableUrlAccess !== true ||
@@ -22,3 +23,7 @@ nodemailer.createTransport = (options) => {
     close() {},
   };
 };
+
+nodemailer.createTransport = createTransport;
+nodemailer.default.createTransport = createTransport;
+esmNodemailer.createTransport = createTransport;

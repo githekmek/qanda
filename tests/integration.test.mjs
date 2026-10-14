@@ -733,7 +733,7 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       const page = await context.newPage(), errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       await page.goto(servers[0].origin + "/konto");
-      await page.getByLabel("E-Mail-Adresse", { exact: true }).fill(email);
+      await page.getByRole("textbox", { name: "E-Mail-Adresse", exact: true }).fill(email);
       await page.getByLabel("Aktuelles Passwort", { exact: true }).fill("old123");
       const emailResponse = page.waitForResponse((res) => res.url().endsWith("/api/auth/recovery") && res.request().method() === "POST");
       await page.getByRole("button", { name: "Bestätigungsmail senden" }).click();
@@ -746,7 +746,7 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await page.getByText("Deine E-Mail-Adresse ist bestätigt.", { exact: true }).waitFor();
       assert.ok(!page.url().includes(verify));
       await page.goto(servers[0].origin + "/passwort-vergessen");
-      await page.getByLabel("E-Mail-Adresse", { exact: true }).fill(email);
+      await page.getByRole("textbox", { name: "E-Mail-Adresse", exact: true }).fill(email);
       await page.getByRole("button", { name: "Reset-Link anfordern" }).click();
       const reset = mailToken(await waitMail(email, "zurücksetzen"));
       await page.goto(servers[0].origin + "/konto/passwort#token=" + reset);

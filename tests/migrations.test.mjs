@@ -12,6 +12,7 @@ const oldMigrations = [
   "20260925000000_login_rate_limit",
   "20261001000000_multiple_select",
   "20261013000000_reaction_reads",
+  "20261014000000_account_recovery",
 ];
 
 async function installOld(url, count = 6) {
@@ -134,5 +135,30 @@ test("legacy database with users refuses destructive migration without changing 
     assert.deepEqual(rows, [{ username: "legacy", passwordHash: "keep-hash" }]);
     const applied = await ctx.db.$queryRaw`SELECT * FROM "_prisma_migrations" WHERE migration_name = '20250103000000_rooms_and_access_codes'`;
     assert.equal(applied.length, 0);
+  } finally { await ctx.close(); }
+});
+
+test("profile migration preserves verified addresses, session versions and outstanding recovery links", async () => {
+  const ctx = await isolatedDatabase();
+  try {
+    await installOld(ctx.url, 7);
+    const db = ctx.db;
+    await db.$executeRaw`INSERT INTO "User" ("id","username","passwordHash","email","emailVerifiedAt","sessionVersion")
+      VALUES ('verified-old','verified_old','same-password-hash','verified@example.test','2026-10-14',3)`;
+    await db.recoveryToken.create({ data: {
+      tokenHash: "a".repeat(64), userId: "verified-old", purpose: "reset",
+      email: "verified@example.test", sessionVersion: 3, expiresAt: new Date("2030-01-01"),
+    } });
+    const before = await db.recoveryToken.findMany();
+    succeeded(command(["scripts/migrate-deploy.mjs"], ctx.url));
+    const user = await db.user.findUnique({ where: { id: "verified-old" } });
+    assert.equal(user.email, "verified@example.test");
+    assert.equal(user.emailVerifiedAt.toISOString(), "2026-10-14T00:00:00.000Z");
+    assert.equal(user.passwordHash, "same-password-hash");
+    assert.equal(user.sessionVersion, 3);
+    assert.equal(user.theme, "standard");
+    assert.equal(user.notifyTurn, false);
+    assert.equal(user.notifyComments, false);
+    assert.deepEqual(await db.recoveryToken.findMany(), before);
   } finally { await ctx.close(); }
 });

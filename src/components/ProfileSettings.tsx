@@ -78,7 +78,7 @@ export default function ProfileSettings({ initial }: { initial: Profile }) {
             className={"rounded-lg px-1 py-3 text-sm disabled:opacity-60 " + (profile.theme === value ? "theme-selected" : "")}
             onClick={() => save({ theme: value })}>{profile.theme === value ? "✓ " : ""}{label}</button>)}
       </div>
-      <p className="mt-3 text-xs text-zinc-500">Standard folgt wie bisher deiner Geräteeinstellung. Deine Auswahl gilt auf allen Geräten.</p>
+      <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-300">Standard folgt wie bisher deiner Geräteeinstellung. Deine Auswahl gilt auf allen Geräten.</p>
     </section>
     <p role="status" className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-300">{status || "Einstellungen werden automatisch gespeichert."}</p>
     {error && <p role="alert" className="mt-3 text-sm text-red-700 dark:text-red-300">{error} Bitte versuche es erneut.</p>}
