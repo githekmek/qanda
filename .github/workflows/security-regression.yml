@@ -43,10 +43,6 @@ jobs:
       - run: npm run test:integration
         env:
           QANDA_BROWSER_TESTS: "1"
-      - name: Profile visual review
-        if: always()
-        run: |
-          node --input-type=module -e 'import fs from "node:fs"; for (const mode of ["standard","colorful","dark"]) { const path="test-results/profile-"+mode+".png"; if(fs.existsSync(path)) console.log("PROFILE_IMAGE_"+mode+"="+fs.readFileSync(path).toString("base64")); }'
       - name: Production dependency audit
         run: npm audit --omit=dev --json
       - name: Full dependency audit with reviewed exception

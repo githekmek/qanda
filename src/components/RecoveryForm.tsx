@@ -65,7 +65,7 @@ export default function RecoveryForm({ mode, embedded = false }: { mode: Mode; e
       {!embedded && <h1 className="mt-5 text-xl font-semibold">{title}</h1>}
       {mode === "account" && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">
         {account?.verified ? `Bestätigte Adresse: ${account.email}` : "Hinterlege eine E-Mail-Adresse und bestätige sie, damit du dein Passwort bei Bedarf zurücksetzen kannst."}
-        {" "}Eine neue Adresse ersetzt die bisherige erst nach der Bestätigung.
+        {" "}Eine neue Adresse ersetzt die bisherige erst nach der Bestätigung. Dabei werden E-Mail-Benachrichtigungen ausgeschaltet; du kannst sie anschließend wieder aktivieren.
       </p>}
       {mode === "request" && <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">
         Gib deine im Konto bestätigte E-Mail-Adresse ein. Ohne hinterlegte Adresse ist ein E-Mail-Reset noch nicht möglich.
