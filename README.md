@@ -51,7 +51,7 @@ npm run dev
 
 Die App läuft dann unter <http://localhost:3000>. Registriere dich einmal mit dem
 `ADMIN_SETUP_CODE` aus der `.env` – dieser Account wird zum Admin und kann unter `/admin`
-Zugangscodes für alle weiteren Spieler erzeugen.
+Zugangscodes für alle weiteren Spieler erzeugen und bei Bedarf einen kurzlebigen Passwortreset-Link für einen exakten Spielernamen erstellen.
 
 ## Kostenlos hosten (Vercel + Neon)
 
@@ -110,11 +110,11 @@ src/lib/questionCatalog.ts  Fragenkatalog (Locker/Spicy/Tief) inkl. Zufallsziehu
 src/app/api/auth/*          Registrierung, Login, Logout, aktueller Nutzer
 src/app/api/rooms/*         Räume anlegen/auflisten, Spielzüge, Archivieren, Einladungslink
 src/app/api/invites/*       Einladung ansehen und annehmen
-src/app/api/admin/*         Zugangscodes erzeugen, auflisten, zurückziehen
+src/app/api/admin/*         Zugangscodes und Admin-Passwortreset
 src/app/page.tsx            Übersicht der eigenen Räume
 src/app/room/[id]           Spielseite eines Raums
 src/app/join/[code]         Einladung annehmen
-src/app/admin               Zugangscode-Verwaltung
+src/app/admin               Administration für Zugangscodes und Passwortreset
 src/app/login               Login und Registrierung (mit Zugangscode)
 ```
 
@@ -221,6 +221,12 @@ Bei Mehrfachauswahl erhält jede von beiden gewählte Option in beiden Antwortze
 einen grünen Haken mit dem zugänglichen Text „Von beiden gewählt“. Verglichen werden
 Optionsindizes, damit gleiche Beschriftungen nicht irrtümlich gleichgesetzt werden.
 Die Kennzeichnung „gleich“ für vollständig identische Antworten bleibt erhalten.
+
+### Admin-Passwortreset ohne hinterlegte E-Mail
+
+Ein Admin kann unter **Administration → Passwort zurücksetzen** einen Spieler über den exakten Spielernamen suchen und einen Reset-Link erzeugen. Der Link ist 30 Minuten gültig, nur einmal verwendbar und muss privat weitergegeben werden. Ein neuer Admin-Link ersetzt einen vorherigen Admin-Link desselben Spielers. Das Erzeugen des Links beendet keine laufende Sitzung; erst die erfolgreiche Passwortänderung widerruft alte Sitzungen. Der Admin sieht und setzt das neue Passwort nicht.
+
+Dafür ist keine Schemaänderung nötig: Der Link verwendet die bestehende RecoveryToken-Tabelle. Nur der SHA-256-Hash des zufälligen Tokens wird gespeichert; Räume, Fragen, Antworten, Kommentare und Einstellungen werden nicht verändert.
 
 ### Passwortreset mit Gmail
 

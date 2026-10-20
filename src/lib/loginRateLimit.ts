@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 const WINDOW_SECONDS = 15 * 60;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 
-export async function limitLogin(request: Request, username: string) {
+export async function limitLogin(request: Request, username: string, message = "Zu viele Anmeldeversuche. Bitte versuche es später erneut.") {
   const buckets = [{ key: hash("account:" + username), limit: 10 }];
   // Vercel overwrites this header. Never trust arbitrary X-Forwarded-For.
   const ip = process.env.VERCEL === "1"
@@ -28,7 +28,7 @@ export async function limitLogin(request: Request, username: string) {
     `;
     if (rows[0].attempts > bucket.limit) {
       return NextResponse.json(
-        { error: "Zu viele Anmeldeversuche. Bitte versuche es später erneut." },
+        { error: message },
         { status: 429, headers: { "Retry-After": String(rows[0].retryAfter) } }
       );
     }

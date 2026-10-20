@@ -681,6 +681,84 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.equal(await db.recoveryToken.count({ where: { userId: a.id } }), 0);
   });
 
+  await t.test("admin reset links work without email, preserve game data and revoke sessions only after use", async () => {
+    const admin = await db.user.findFirstOrThrow({ where: { isAdmin: true } });
+    const target = await user(), friend = await user(), r = await room(target, friend);
+    const question = await db.question.create({ data: {
+      roomId: r.id, askerId: target.id, type: "TEXT", text: "Bestehende Frage",
+      askerAnswer: "Bestehende Antwort", status: "ANSWERED",
+      answer: { create: { responderId: friend.id, value: "Bestehende Mitspielerantwort" } },
+    } });
+    await db.reaction.create({ data: {
+      questionId: question.id, authorId: friend.id, text: "Bestehender Kommentar",
+    } });
+    const preserved = {
+      room: await db.room.findUnique({ where: { id: r.id } }),
+      question: await db.question.findUnique({ where: { id: question.id } }),
+      reactions: await db.reaction.findMany({ where: { questionId: question.id }, orderBy: { id: "asc" } }),
+    };
+    const endpoint = "/api/admin/password-reset";
+
+    assert.equal((await request(endpoint + "?username=" + target.username, { method: "GET" })).status, 403);
+    assert.equal((await request(endpoint + "?username=" + target.username, { actor: friend, method: "GET" })).status, 403);
+    const found = await request(endpoint + "?username=" + target.username, { actor: admin, method: "GET" });
+    assert.equal(found.status, 200);
+    assert.deepEqual(found.body, { user: { username: target.username } });
+    assert.deepEqual((await request(endpoint + "?username=unknown_player", { actor: admin, method: "GET" })).body, { user: null });
+    const crossOrigin = await fetch(servers[0].origin + endpoint, {
+      method: "POST",
+      headers: {
+        Cookie: await cookie(admin),
+        Origin: "https://attacker.example",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ username: target.username }),
+    });
+    assert.equal(crossOrigin.status, 403);
+
+    const first = await request(endpoint, { actor: admin, data: { username: target.username } });
+    assert.equal(first.status, 200);
+    assert.match(first.body.path, /^\/konto\/passwort#token=[a-f0-9]{64}$/);
+    const firstToken = first.body.path.split("#token=")[1];
+    let stored = await db.recoveryToken.findMany({ where: { userId: target.id, purpose: "admin-reset" } });
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].tokenHash, tokenHash(firstToken));
+    assert.equal(stored[0].email, "");
+    assert.ok(!JSON.stringify(stored).includes(firstToken));
+    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).status, 200,
+      "creating a link must not end an existing session");
+
+    const second = await request(endpoint, { actor: admin, data: { username: target.username }, server: 1 });
+    assert.equal(second.status, 200);
+    const secondToken = second.body.path.split("#token=")[1];
+    stored = await db.recoveryToken.findMany({ where: { userId: target.id, purpose: "admin-reset" } });
+    assert.equal(stored.length, 1, "a new admin link invalidates the older admin link");
+    assert.equal(stored[0].tokenHash, tokenHash(secondToken));
+    assert.equal((await request("/api/auth/recovery", {
+      data: { action: "reset", token: firstToken, password },
+    })).status, 400);
+    assert.equal((await request("/api/auth/recovery", {
+      data: { action: "reset", token: secondToken, password },
+    })).status, 200);
+    assert.equal((await request("/api/auth/recovery", {
+      data: { action: "reset", token: secondToken, password },
+    })).status, 400, "the link is single-use");
+    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).status, 401);
+    assert.equal((await request("/api/auth/login", {
+      data: { username: target.username, password: "old123" },
+    })).status, 401);
+    assert.equal((await request("/api/auth/login", {
+      data: { username: target.username, password },
+    })).status, 200);
+    assert.deepEqual(await db.room.findUnique({ where: { id: r.id } }), preserved.room);
+    assert.deepEqual(await db.question.findUnique({ where: { id: question.id } }), preserved.question);
+    assert.deepEqual(
+      await db.reaction.findMany({ where: { questionId: question.id }, orderBy: { id: "asc" } }),
+      preserved.reactions,
+    );
+    assert.equal(await db.recoveryToken.count({ where: { userId: target.id } }), 0);
+  });
+
   await t.test("expired links, duplicate emails and failed mail delivery never overwrite accounts", async () => {
     const a = await user(), b = await user();
     const path = "/api/auth/recovery", email = a.username + "@example.test";
@@ -760,6 +838,40 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
       await page.goto(servers[0].origin + "/konto");
       await page.waitForURL("**/login");
+      assert.deepEqual(errors, []);
+    } finally { await browser.close(); }
+  });
+
+  await t.test("browser: admin can generate a password-reset link for a player without email", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    try {
+      const admin = await db.user.findFirstOrThrow({ where: { isAdmin: true } });
+      const target = await user();
+      assert.equal(target.email, null);
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addCookies([{
+        name: "qanda_session",
+        value: (await cookie(admin)).slice("qanda_session=".length),
+        url: servers[0].origin,
+      }]);
+      const page = await context.newPage(), errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(servers[0].origin + "/admin");
+      await page.getByRole("heading", { name: "Administration", exact: true }).waitFor();
+      await page.getByLabel("Spielername", { exact: true }).fill(target.username);
+      await page.getByRole("button", { name: "Spieler suchen", exact: true }).click();
+      await page.getByText("Gefunden:").filter({ hasText: target.username }).waitFor();
+      await page.getByRole("button", { name: "Reset-Link erzeugen", exact: true }).click();
+      const resetLink = await page.getByLabel("Passwortreset-Link", { exact: true }).inputValue();
+      assert.equal(resetLink.startsWith(servers[0].origin + "/konto/passwort#token="), true);
+      assert.match(resetLink.split("#token=")[1], /^[a-f0-9]{64}$/);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      await page.goto(resetLink);
+      await page.getByLabel("Neues Passwort", { exact: true }).fill(password);
+      await page.getByLabel("Neues Passwort wiederholen", { exact: true }).fill(password);
+      await page.getByRole("button", { name: "Passwort speichern", exact: true }).click();
+      await page.getByRole("link", { name: "Jetzt anmelden", exact: true }).waitFor();
       assert.deepEqual(errors, []);
     } finally { await browser.close(); }
   });

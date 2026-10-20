@@ -113,8 +113,11 @@ export async function POST(request: Request) {
     // Reject invalid tokens before the expensive password hash.
     const tokenHash = hash(data.token);
     const preliminary = await prisma.recoveryToken.findUnique({ where: { tokenHash } });
-    const purpose = data.action === "verify" ? "verify" : "reset";
-    if (!preliminary || preliminary.purpose !== purpose || preliminary.expiresAt <= new Date()) throw invalidLink();
+    const purpose = data.action === "verify" ? "verify" : preliminary?.purpose;
+    const expectedPurpose = data.action === "verify"
+      ? purpose === "verify"
+      : purpose === "reset" || purpose === "admin-reset";
+    if (!preliminary || !expectedPurpose || preliminary.expiresAt <= new Date()) throw invalidLink();
     const passwordHash = data.action === "reset" ? await bcrypt.hash(data.password, 10) : null;
     await serializable(async (tx) => {
       const token = await tx.recoveryToken.findUnique({ where: { tokenHash }, include: { user: true } });
@@ -126,7 +129,7 @@ export async function POST(request: Request) {
         await tx.user.update({ where: { id: token.userId }, data: { email: token.email, emailVerifiedAt: new Date(), notifyTurn: false, notifyComments: false } });
         await tx.notification.deleteMany({ where: { userId: token.userId } });
       } else {
-        if (!token.user.emailVerifiedAt || token.user.email !== token.email) throw invalidLink();
+        if (token.purpose === "reset" && (!token.user.emailVerifiedAt || token.user.email !== token.email)) throw invalidLink();
         await tx.user.update({ where: { id: token.userId }, data: { passwordHash: passwordHash!, sessionVersion: { increment: 1 } } });
       }
       // Consume this link and invalidate outstanding links for this account.
