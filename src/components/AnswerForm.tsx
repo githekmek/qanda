@@ -72,6 +72,11 @@ export default function AnswerForm({
       <h2 className="text-lg font-semibold">
         Frage von {question.asker.username}
       </h2>
+      {question.parentQuestion && (
+        <p className="rounded-xl bg-indigo-50 px-3 py-2 text-sm text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100">
+          Folgefrage zu: <span className="font-medium">{question.parentQuestion.text}</span>
+        </p>
+      )}
       {choice && <span className="self-start rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">{multiple ? "Mehrere Antworten" : "Eine Antwort"}</span>}
       <p className="text-base">{question.text}</p>
 

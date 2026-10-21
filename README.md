@@ -319,3 +319,57 @@ geht verloren, ist bei Wiederholung ein Duplikat möglich (stabile Message-ID).
 Ein bereits an SMTP übergebener Versand kann durch Ausschalten nicht zurückgerufen werden.
 Höchstens 10 Benachrichtigungsmails pro Nutzer/Stunde und 100 pro DB/24 Stunden;
 Recovery hat sein separates 100er-Budget. Preview und Produktion teilen das Gmail-Kontingent.
+
+
+### Installierbare Web-App und Push
+
+Q&A stellt ein Web-App-Manifest, App-Symbole und einen Service Worker bereit. Unter
+**Profil & Einstellungen → App installieren** zeigt die Oberfläche gerätespezifische
+Schritte. Auf Android wird der Browser-Installationsdialog verwendet, sobald er
+verfügbar ist. Auf iOS/iPadOS ab 16.4 muss Q&A über **Teilen → Zum Home-Bildschirm**
+installiert und anschließend über das neue Symbol geöffnet werden, bevor Push
+aktiviert werden kann.
+
+Push ist pro Gerät und Ereignis freiwillig und standardmäßig ausgeschaltet. E-Mail-
+und Push-Einstellungen sind voneinander unabhängig. Benachrichtigungen enthalten
+keine Fragen, Antworten, Kommentare, Spieler- oder Raumnamen; ein Tippen öffnet nur
+den zugehörigen privaten Raum. Abgelaufene Browser-Abonnements werden beim Versand
+entfernt. Beim Abmelden wird das Abonnement dieses Geräts gelöscht.
+
+Für jedes Vercel-Environment separat setzen:
+
+- `VAPID_PUBLIC_KEY`
+- `VAPID_PRIVATE_KEY` (geheim, niemals als `NEXT_PUBLIC_*`)
+- `VAPID_SUBJECT`, beispielsweise `mailto:qanda-versand@gmail.com`
+
+Ein Schlüsselpaar einmalig mit `npx web-push generate-vapid-keys` erzeugen. Preview
+und Produktion dürfen dasselbe dauerhafte Schlüsselpaar nutzen; ein späterer Wechsel
+macht bestehende Geräteabonnements unbrauchbar und erfordert eine erneute Aktivierung.
+Ohne vollständige VAPID-Konfiguration bleiben Spiele und E-Mail-Versand nutzbar,
+während Push im Profil als nicht eingerichtet erscheint.
+
+Zug-Pushs werden direkt nach der Spielaktion angestoßen. Kommentar-Pushs werden wie
+E-Mails mindestens fünf Minuten gesammelt und durch denselben Dispatcher versendet.
+Auf geschlossenen Geräten findet kein Polling statt; der Pushdienst des Browsers
+weckt den Service Worker. Der bestehende externe Zeitgeber sollte weiterhin alle
+fünf Minuten `/api/notifications/dispatch` aufrufen.
+
+### Folgefragen
+
+Wer regulär am Zug ist, kann bei jeder beantworteten Frage ohne vorhandene direkte
+Folgefrage **Folgefrage stellen** wählen. Die neue Frage verwendet den normalen
+Antwortablauf und verbraucht den Zug. Jede Frage kann genau eine direkte Folgefrage
+haben; die Folgefrage kann selbst wieder Ausgangspunkt der nächsten Folgefrage sein.
+Vorhandene und neue Kommentare bleiben an ihrer jeweiligen Frage und beeinflussen
+Folgefragen nicht.
+
+### Neuigkeiten in der App
+
+Die Übersicht enthält einen Verlauf ausschließlich spielerrelevanter Änderungen.
+Ein lokales Kennzeichen „Neu“ erscheint pro Gerät einmal je Release und verschwindet
+beim Öffnen. Admin-Funktionen werden dort nicht veröffentlicht.
+
+Migration `20261021000000_push_followups` ist additiv: Sie ergänzt eine optionale
+Selbstreferenz an Fragen, eine Geräte-Abonnementtabelle und einen Versandkanal mit
+dem Standardwert `email`. Bestehende Sitzungen, Nutzer, Räume, Fragen, Antworten,
+Kommentare, Gelesen-Stände und offene Versandaufträge bleiben unverändert.

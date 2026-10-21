@@ -127,7 +127,7 @@ export async function POST(request: Request) {
         const owner = await tx.user.findUnique({ where: { email: token.email } });
         if (owner && owner.id !== token.userId) throw invalidLink();
         await tx.user.update({ where: { id: token.userId }, data: { email: token.email, emailVerifiedAt: new Date(), notifyTurn: false, notifyComments: false } });
-        await tx.notification.deleteMany({ where: { userId: token.userId } });
+        await tx.notification.deleteMany({ where: { userId: token.userId, channel: "email" } });
       } else {
         if (token.purpose === "reset" && (!token.user.emailVerifiedAt || token.user.email !== token.email)) throw invalidLink();
         await tx.user.update({ where: { id: token.userId }, data: { passwordHash: passwordHash!, sessionVersion: { increment: 1 } } });

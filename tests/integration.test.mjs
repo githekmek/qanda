@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
+import webpush from "web-push";
 import { SignJWT } from "jose";
 import { isolatedDatabase, command, succeeded } from "./database.mjs";
 
@@ -15,6 +16,7 @@ const require = createRequire(import.meta.url);
 const password = "new-test-password-123";
 const secret = "integration-test-secret-not-a-production-secret";
 const setupCode = "integration-setup-code";
+const vapid = webpush.generateVAPIDKeys();
 
 let mailUrl = "";
 const mails = [];
@@ -26,7 +28,7 @@ async function startServer(url) {
   const port = socket.address().port;
   await new Promise((resolve) => socket.close(resolve));
   const child = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "-p", String(port)], {
-    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0", GMAIL_USER: "sender@gmail.com", GMAIL_APP_PASSWORD: "isolated-test-password", CRON_SECRET: "isolated-cron-secret-at-least-32-characters", APP_URL: "https://qanda.example.test", TEST_MAIL_URL: mailUrl, NODE_OPTIONS: "--import=" + require.resolve("./mockGmail.mjs") },
+    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0", GMAIL_USER: "sender@gmail.com", GMAIL_APP_PASSWORD: "isolated-test-password", VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: "mailto:push@example.test", CRON_SECRET: "isolated-cron-secret-at-least-32-characters", APP_URL: "https://qanda.example.test", TEST_MAIL_URL: mailUrl, NODE_OPTIONS: "--import=" + require.resolve("./mockGmail.mjs") },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let logs = "";
@@ -337,6 +339,86 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       assert.deepEqual(after, { ...before, status: "ANSWERED" });
       assert.equal((await db.room.findUnique({ where: { id: r.id } })).inviteCode, r.inviteCode);
     }
+  });
+
+  await t.test("follow-up questions use the normal turn, keep comments and form a single chain", async () => {
+    const a = await user(), b = await user(), r = await room(a, b, { currentAskerId: a.id });
+    const parent = await db.question.create({ data: {
+      roomId: r.id, askerId: b.id, type: "TEXT", text: "Ursprüngliche Frage",
+      askerAnswer: "Antwort B", status: "ANSWERED",
+      answer: { create: { responderId: a.id, value: "Antwort A" } },
+    } });
+    const comment = await db.reaction.create({ data: {
+      questionId: parent.id, authorId: b.id, text: "Bestehender Kommentar",
+    } });
+    const path = "/api/rooms/" + r.id + "/ask";
+    const payload = {
+      type: "TEXT", text: "Erste Folgefrage", askerAnswer: "Eigene Folgeantwort",
+      parentQuestionId: parent.id,
+    };
+
+    assert.equal((await request(path, { actor: b, data: payload })).status, 403);
+    const created = await request(path, { actor: a, data: payload });
+    assert.equal(created.status, 200);
+    assert.deepEqual(created.body.parentQuestion, { id: parent.id, text: parent.text });
+    assert.equal(created.body.hasFollowUp, false);
+    assert.equal((await request(path, { actor: a, data: payload })).status, 409,
+      "an open follow-up remains the only pending question");
+    const stored = await db.question.findUnique({ where: { id: created.body.id } });
+    assert.equal(stored.parentQuestionId, parent.id);
+    assert.deepEqual(await db.reaction.findUnique({ where: { id: comment.id } }), comment);
+
+    const answered = await request("/api/rooms/" + r.id + "/answer", {
+      actor: b, data: { questionId: created.body.id, value: "Antwort auf die Folgefrage" },
+    });
+    assert.equal(answered.status, 200);
+    assert.deepEqual(answered.body.parentQuestion, { id: parent.id, text: parent.text });
+    const state = await request("/api/rooms/" + r.id + "/state", { actor: b, method: "GET" });
+    const original = state.body.history.find((question) => question.id === parent.id);
+    assert.equal(original.hasFollowUp, true);
+    assert.equal(original.reactions.length, 1);
+
+    assert.equal((await request(path, { actor: b, data: payload })).status, 409,
+      "a question can have only one direct follow-up");
+    const chained = await request(path, { actor: b, data: {
+      ...payload, text: "Nächste Folgefrage", parentQuestionId: created.body.id,
+    } });
+    assert.equal(chained.status, 200);
+    assert.equal(chained.body.parentQuestion.id, created.body.id);
+  });
+
+  await t.test("push subscriptions are private, device-specific and opt in", async () => {
+    const a = await user(), b = await user();
+    const endpoint = "https://push.example.test/subscription/" + randomBytes(12).toString("hex");
+    const subscription = {
+      endpoint,
+      keys: { p256dh: "p".repeat(88), auth: "a".repeat(24) },
+      userAgent: "integration-test",
+    };
+    assert.equal((await request("/api/push", { method: "GET" })).status, 401);
+    const initial = await request("/api/push", { actor: a, method: "GET" });
+    assert.equal(initial.body.available, true);
+    assert.equal(initial.body.subscription, null);
+    const crossOrigin = await fetch(servers[0].origin + "/api/push", {
+      method: "POST",
+      headers: { Cookie: await cookie(a), Origin: "https://attacker.example", "Content-Type": "application/json" },
+      body: JSON.stringify(subscription),
+    });
+    assert.equal(crossOrigin.status, 403);
+    const created = await request("/api/push", { actor: a, data: subscription });
+    assert.equal(created.status, 200);
+    assert.equal(created.body.subscription.notifyTurn, false);
+    assert.equal(created.body.subscription.notifyComments, false);
+    assert.equal((await request("/api/push", { actor: b, method: "PATCH",
+      data: { endpoint, notifyTurn: true } })).status, 404);
+    const updated = await request("/api/push", { actor: a, method: "PATCH",
+      data: { endpoint, notifyComments: true } });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.subscription.notifyTurn, false);
+    assert.equal(updated.body.subscription.notifyComments, true);
+    assert.equal((await db.pushSubscription.findUnique({ where: { endpoint } })).userId, a.id);
+    assert.equal((await request("/api/push", { actor: a, method: "DELETE", data: { endpoint } })).status, 200);
+    assert.equal(await db.pushSubscription.count({ where: { endpoint } }), 0);
   });
 
   await t.test("browser: mobile creation, mode switching, removal, multiple answers and legacy radios", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {

@@ -88,7 +88,12 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     async function snapshot() {
       const result = {};
       for (const model of ["user", "room", "question", "answer", "reaction", "accessCode"]) {
-        result[model] = await db[model].findMany({ orderBy: { id: "asc" }, ...(model === "user" ? { select: { id: true, username: true, passwordHash: true, isAdmin: true, createdAt: true } } : {}) });
+        const select = model === "user"
+          ? { id: true, username: true, passwordHash: true, isAdmin: true, createdAt: true }
+          : model === "question"
+            ? { id: true, type: true, text: true, options: true, askerAnswer: true, status: true, createdAt: true, roomId: true, askerId: true }
+            : undefined;
+        result[model] = await db[model].findMany({ orderBy: { id: "asc" }, ...(select ? { select } : {}) });
       }
       result.visits = await db.roomReactionVisit.findMany({ orderBy: { userId: "asc" } });
       result.reads = await db.reactionRead.findMany({ orderBy: { userId: "asc" } });
@@ -105,6 +110,11 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       options: '["A","B"]', askerAnswer: "[0,1]",
     } });
     assert.equal(newQuestion.type, "MULTIPLE_SELECT");
+    const followUp = await db.question.create({ data: {
+      roomId: room.id, askerId: b.id, type: "TEXT", text: "Sichere Folgefrage",
+      askerAnswer: "Neue Antwort", parentQuestionId: question.id,
+    } });
+    assert.equal(followUp.parentQuestionId, question.id);
     assert.equal(await db.recoveryToken.count(), 0);
     const preservedUser = await db.user.findUnique({ where: { id: a.id } });
     assert.equal(preservedUser.email, null);
@@ -114,6 +124,8 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     assert.equal(preservedUser.notifyTurn, false);
     assert.equal(preservedUser.notifyComments, false);
     assert.equal(await db.notification.count(), 0);
+    assert.equal(await db.pushSubscription.count(), 0);
+    assert.equal((await db.question.findUnique({ where: { id: question.id } })).parentQuestionId, null);
     assert.equal(await db.roomReactionVisit.count(), 1);
     assert.equal(await db.reactionRead.count(), 1);
 

@@ -22,6 +22,8 @@ export type PublicQuestion = {
     responder: { id: string; username: string };
   };
   isMatch?: boolean;
+  parentQuestion: { id: string; text: string } | null;
+  hasFollowUp: boolean;
   reactions: {
     id: string;
     text: string;
@@ -36,6 +38,8 @@ export const questionInclude = {
   asker: true,
   answer: { include: { responder: true } },
   reactions: { include: { author: true }, orderBy: { createdAt: "asc" } },
+  parentQuestion: { select: { id: true, text: true } },
+  followUp: { select: { id: true } },
 } as const;
 
 export async function loadQuestionWithRelations(questionId: string, db: Prisma.TransactionClient = prisma) {
@@ -68,6 +72,8 @@ export function serializeQuestionForViewer(
     status: question.status,
     createdAt: question.createdAt.toISOString(),
     asker: { id: question.asker.id, username: question.asker.username },
+    parentQuestion: question.parentQuestion,
+    hasFollowUp: Boolean(question.followUp),
     reactions: question.reactions.map((reaction) => ({
       id: reaction.id,
       text: reaction.text,

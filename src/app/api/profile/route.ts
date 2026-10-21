@@ -41,7 +41,9 @@ export async function PATCH(request: Request) {
       const kinds = [];
       if (parsed.data.notifyTurn === false) kinds.push("turn");
       if (parsed.data.notifyComments === false) kinds.push("comment");
-      if (kinds.length) await tx.notification.deleteMany({ where: { userId: session.userId, kind: { in: kinds } } });
+      if (kinds.length) await tx.notification.deleteMany({
+        where: { userId: session.userId, kind: { in: kinds }, channel: "email" },
+      });
       return updated;
     });
     return NextResponse.json({ ...user, available: Boolean(recoveryConfig()) });

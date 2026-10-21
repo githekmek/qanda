@@ -30,6 +30,7 @@ model User {
   notifyTurn Boolean @default(false)
   notifyComments Boolean @default(false)
   notifications Notification[]
+  pushSubscriptions PushSubscription[]
   isAdmin      Boolean  @default(false)
   createdAt    DateTime @default(now())
 
@@ -99,6 +100,10 @@ model Question {
 
   answer    Answer?
   reactions Reaction[]
+
+  parentQuestionId String? @unique
+  parentQuestion Question? @relation("QuestionFollowUp", fields: [parentQuestionId], references: [id], onDelete: SetNull)
+  followUp Question? @relation("QuestionFollowUp")
 }
 
 model Answer {
@@ -170,6 +175,23 @@ model RecoveryToken {
   @@index([expiresAt])
 }
 
+model PushSubscription {
+  id String @id @default(cuid())
+  endpoint String @unique
+  p256dh String
+  auth String
+  userAgent String?
+  notifyTurn Boolean @default(false)
+  notifyComments Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 model Notification {
   id String @id @default(cuid())
   eventKey String @unique
@@ -178,11 +200,12 @@ model Notification {
   roomId String
   room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
   kind String
+  channel String @default("email")
   createdAt DateTime @default(now())
   dueAt DateTime
   claim String?
   lockedUntil DateTime @default(dbgenerated("'1970-01-01 00:00:00'::timestamp"))
   attempts Int @default(0)
   @@index([dueAt, lockedUntil])
-  @@index([userId, kind])
+  @@index([userId, kind, channel])
 }

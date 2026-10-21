@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#4f46e5"/>
+  <path d="M104 128h304a40 40 0 0 1 40 40v168a40 40 0 0 1-40 40H248l-88 64 20-64h-76a40 40 0 0 1-40-40V168a40 40 0 0 1 40-40z" fill="white"/>
+  <text x="256" y="296" text-anchor="middle" font-family="Arial,sans-serif" font-size="128" font-weight="700" fill="#4f46e5">Q&amp;A</text>
+</svg>

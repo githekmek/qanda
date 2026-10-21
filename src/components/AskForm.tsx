@@ -38,10 +38,14 @@ export default function AskForm({
   roomId,
   onSubmitted,
   askedQuestions,
+  followUpTo,
+  onCancelFollowUp,
 }: {
   roomId: string;
   onSubmitted: () => void;
   askedQuestions: string[];
+  followUpTo?: { id: string; text: string } | null;
+  onCancelFollowUp?: () => void;
 }) {
   const [type, setType] = useState<QuestionType>("TEXT");
   const [categories, setCategories] = useState<QuestionCategory[]>([...CATEGORIES]);
@@ -126,6 +130,7 @@ export default function AskForm({
           text: text.trim(),
           options: type === "MULTIPLE_CHOICE" ? trimmedOptions : undefined,
           askerAnswer,
+          parentQuestionId: followUpTo?.id,
         }),
       });
       const data = await res.json();
@@ -148,10 +153,28 @@ export default function AskForm({
 
   return (
     <form
+      id="question-form"
       onSubmit={handleSubmit}
       className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950"
     >
-      <h2 className="text-lg font-semibold">Du bist dran: Stelle eine Frage</h2>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">
+            {followUpTo ? "Du bist dran: Stelle eine Folgefrage" : "Du bist dran: Stelle eine Frage"}
+          </h2>
+          {followUpTo && onCancelFollowUp && (
+            <button type="button" onClick={onCancelFollowUp}
+              className="text-sm text-zinc-500 underline hover:text-zinc-800 dark:hover:text-zinc-200">
+              Normale Frage stellen
+            </button>
+          )}
+        </div>
+        {followUpTo && (
+          <p className="rounded-xl bg-indigo-50 px-3 py-2 text-sm text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100">
+            Folgefrage zu: <span className="font-medium">{followUpTo.text}</span>
+          </p>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
         <button
@@ -345,7 +368,7 @@ export default function AskForm({
         disabled={loading}
         className="rounded-lg bg-zinc-900 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
       >
-        {loading ? "Wird gesendet…" : "Frage stellen"}
+        {loading ? "Wird gesendet…" : followUpTo ? "Folgefrage stellen" : "Frage stellen"}
       </button>
     </form>
   );

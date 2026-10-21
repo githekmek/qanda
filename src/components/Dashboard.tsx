@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { RoomSummary } from "@/types/game";
+import ReleaseNotes from "@/components/ReleaseNotes";
+import InstallHint from "@/components/InstallHint";
+import { unsubscribeThisDevice } from "@/components/InstallPushSettings";
 
 type RoomsResponse = {
   rooms: RoomSummary[];
@@ -79,6 +82,7 @@ export default function Dashboard({
   }
 
   async function handleLogout() {
+    await unsubscribeThisDevice();
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
     router.refresh();
@@ -105,6 +109,7 @@ export default function Dashboard({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
+          <ReleaseNotes />
           <Link href="/konto" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium dark:border-zinc-700">Profil &amp; Einstellungen</Link>
           {isAdmin && (
             <Link
@@ -122,6 +127,8 @@ export default function Dashboard({
           </button>
         </div>
       </header>
+
+      <InstallHint />
 
       <form
         onSubmit={createRoom}

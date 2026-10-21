@@ -2,6 +2,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import PwaBootstrap from "@/components/PwaBootstrap";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -17,6 +18,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Q&A – Das Spiel zu unserem Podcast",
   description: "Zwei-Spieler Frage-Antwort-Spiel: Stellt euch abwechselnd Fragen und deckt die Antworten gemeinsam auf.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "Q&A", statusBarStyle: "default" },
+  icons: { apple: [{ url: "/qanda-icon.svg", type: "image/svg+xml" }] },
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
@@ -28,7 +32,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       data-theme={user?.theme ?? "standard"}
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col"><PwaBootstrap />{children}</body>
     </html>
   );
 }

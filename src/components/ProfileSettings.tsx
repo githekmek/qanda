@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import RecoveryForm from "@/components/RecoveryForm";
+import InstallPushSettings from "@/components/InstallPushSettings";
 
 type Profile = {
   username: string; email: string | null; emailVerifiedAt: string | null;
@@ -53,7 +54,7 @@ export default function ProfileSettings({ initial }: { initial: Profile }) {
     </section>
 
     <section aria-labelledby="notifications-title" className="profile-card profile-notifications mt-4 rounded-2xl border border-zinc-200 p-5 dark:border-zinc-700">
-      <h2 id="notifications-title" className="text-lg font-semibold">Benachrichtigungen</h2>
+      <h2 id="notifications-title" className="text-lg font-semibold">E-Mail-Benachrichtigungen</h2>
       {([["notifyTurn", "Wenn ich am Zug bin"], ["notifyComments", "Bei neuen Kommentaren"]] as const).map(([key, label]) =>
         <div key={key} className="mt-4 flex items-center justify-between gap-4">
           <span id={key + "-label"}>{label}</span>
@@ -69,6 +70,8 @@ export default function ProfileSettings({ initial }: { initial: Profile }) {
           "Der E-Mail-Versand ist noch nicht eingerichtet." : "Per E-Mail · freiwillig. Neue Kommentare werden gesammelt versendet."}
       </p>
     </section>
+
+    <InstallPushSettings />
 
     <section aria-labelledby="theme-title" className="profile-card mt-4 rounded-2xl border border-zinc-200 p-5 dark:border-zinc-700">
       <h2 id="theme-title" className="text-lg font-semibold">Darstellung</h2>

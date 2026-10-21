@@ -15,6 +15,8 @@ export type PublicQuestion = {
     responder: { id: string; username: string };
   };
   isMatch?: boolean;
+  parentQuestion: { id: string; text: string } | null;
+  hasFollowUp: boolean;
   reactions: {
     id: string;
     text: string;

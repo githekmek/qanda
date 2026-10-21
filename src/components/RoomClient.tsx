@@ -25,6 +25,7 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [jump, setJump] = useState<{ id: string; sequence: number } | null>(null);
   const [readError, setReadError] = useState(false);
+  const [followUpTarget, setFollowUpTarget] = useState<{ id: string; text: string } | null>(null);
   const initialized = useRef(false);
   const refreshing = useRef(false);
   const historySince = useRef<string | null>(null);
@@ -97,6 +98,11 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
         return merged;
       });
       setState(next);
+      setFollowUpTarget((current) => {
+        if (!current || !next.isMyTurnToAsk) return null;
+        const source = next.history.find((question) => question.id === current.id);
+        return source && !source.hasFollowUp ? current : null;
+      });
       setError(null);
     } catch {
       setError("Verbindung zum Server fehlgeschlagen");
@@ -157,6 +163,16 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
   const newReactions = state?.history.flatMap((q) => q.reactions
     .filter((reaction) => highlighted[reaction.id] && reaction.author.id !== state.me.id)
     .map((reaction) => ({ id: reaction.id, questionId: q.id }))) ?? [];
+  function startFollowUp(question: { id: string; text: string }) {
+    setFollowUpTarget(question);
+    requestAnimationFrame(() => {
+      document.getElementById("question-form")?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start",
+      });
+    });
+  }
+
   function showNextReaction() {
     const previousIndex = newReactions.findIndex((r) => r.id === jump?.id);
     const next = newReactions[(previousIndex + 1) % newReactions.length];
@@ -231,8 +247,11 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
             <AnswerForm key={state.pendingQuestion.id} roomId={roomId} question={state.pendingQuestion} onSubmitted={refresh} />
           ) : state.isMyTurnToAsk ? (
             <AskForm
+              key={followUpTarget?.id ?? "regular-question"}
               roomId={roomId}
-              onSubmitted={refresh}
+              onSubmitted={() => { setFollowUpTarget(null); refresh(); }}
+              followUpTo={followUpTarget}
+              onCancelFollowUp={() => setFollowUpTarget(null)}
               askedQuestions={[
                 ...state.history.map((q) => q.text),
                 ...(state.pendingQuestion ? [state.pendingQuestion.text] : []),
@@ -262,6 +281,8 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
               onToggle={(id, open) => setExpanded((previous) => ({ ...previous, [id]: open }))}
               onSeen={onSeen}
               jump={jump}
+              canAskFollowUp={state.isMyTurnToAsk}
+              onFollowUp={startFollowUp}
             />
           </section>
         </>

@@ -117,6 +117,8 @@ export default function HistoryFeed({
   onToggle,
   onSeen,
   jump,
+  canAskFollowUp,
+  onFollowUp,
 }: {
   roomId: string;
   history: PublicQuestion[];
@@ -128,6 +130,8 @@ export default function HistoryFeed({
   onToggle: (id: string, open: boolean) => void;
   onSeen: (id: string) => void;
   jump: { id: string; sequence: number } | null;
+  canAskFollowUp: boolean;
+  onFollowUp: (question: { id: string; text: string }) => void;
 }) {
   useEffect(() => {
     if (!jump) return;
@@ -161,6 +165,11 @@ export default function HistoryFeed({
                 {q.type === "MULTIPLE_SELECT" ? "Multiple Choice · Mehrere Antworten" : q.type === "MULTIPLE_CHOICE" ? "Multiple Choice · Eine Antwort" : "Freitext"} · {formatTime(q.createdAt)}
               </span>
             </div>
+            {q.parentQuestion && (
+              <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100">
+                Folgefrage zu: <span className="font-medium">{q.parentQuestion.text}</span>
+              </p>
+            )}
             <p className="font-medium">
               {q.asker.username} fragt: {q.text}
             </p>
@@ -180,6 +189,16 @@ export default function HistoryFeed({
                 />
               )}
             </div>
+
+            {canAskFollowUp && !q.hasFollowUp && (
+              <button
+                type="button"
+                onClick={() => onFollowUp({ id: q.id, text: q.text })}
+                className="self-start rounded-lg border border-indigo-200 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+              >
+                Folgefrage stellen
+              </button>
+            )}
 
             <button
               type="button"

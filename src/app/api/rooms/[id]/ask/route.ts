@@ -25,6 +25,7 @@ const askSchema = z
       .max(MAX_OPTIONS)
       .optional(),
     askerAnswer: z.string().trim().min(1).max(MAX_TEXT_LENGTH),
+    parentQuestionId: z.string().min(1).max(64).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.type !== "TEXT") {
@@ -91,7 +92,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Du bist nicht am Zug" }, { status: 403 });
       }
 
-      const { type, text, options, askerAnswer } = parsed.data;
+      const { type, text, options, askerAnswer, parentQuestionId } = parsed.data;
+
+      if (parentQuestionId) {
+        const parent = await tx.question.findUnique({
+          where: { id: parentQuestionId },
+          select: { roomId: true, status: true, followUp: { select: { id: true } } },
+        });
+        if (!parent || parent.roomId !== room.id || parent.status !== "ANSWERED") {
+          return NextResponse.json({ error: "Die Ausgangsfrage ist nicht verfügbar" }, { status: 400 });
+        }
+        if (parent.followUp) {
+          return NextResponse.json({ error: "Zu dieser Frage gibt es bereits eine Folgefrage" }, { status: 409 });
+        }
+      }
 
       const question = await tx.question.create({
         data: {
@@ -103,6 +117,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             ? JSON.stringify(parseMultipleAnswer(askerAnswer, options!.length))
             : askerAnswer,
           askerId: session.userId,
+          parentQuestionId: parentQuestionId ?? null,
         },
       });
 
