@@ -16,19 +16,24 @@ Ergebnisse und entscheidet, welche Variante übernommen wird.
 
 ## Branches
 
-| Branch          | Wer arbeitet dort | Vercel-Deployment |
-| --------------- | ----------------- | ----------------- |
-| `claudepreview` | nur Claude        | Preview           |
-| `codexpreview`  | nur Codex         | Preview           |
-| `main`          | niemand direkt    | Produktion        |
+| Branch          | Wer arbeitet dort | Vercel-Deployment                          |
+| --------------- | ----------------- | ------------------------------------------ |
+| `claudepreview` | nur Claude        | Preview                                    |
+| `codexpreview`  | nur Codex         | Preview                                    |
+| `main`          | niemand direkt    | Preview; Produktion nur per Promote        |
 
 - **Nur auf dem eigenen Preview-Branch arbeiten und dorthin pushen.** Claude nutzt
   ausschließlich `claudepreview`, Codex ausschließlich `codexpreview`. Den Branch des
   anderen Agenten nie anfassen. Keine weiteren Branches anlegen, sofern nicht ausdrücklich
   danach gefragt wird.
-- **Nie direkt auf `main` pushen.** Vercel deployt jeden Push nach `main` sofort als
-  Produktion. Eine Variante kommt nur nach `main`, wenn der Projektinhaber das ausdrücklich
-  für genau diese Variante anweist – dann per Fast-Forward bzw. Merge des Preview-Branches.
+- **Nie direkt auf `main` pushen.** `main` ist der freigegebene Stand. Eine Variante kommt
+  nur nach `main`, wenn der Projektinhaber das ausdrücklich für genau diese Variante
+  anweist – dann per Fast-Forward bzw. Merge des Preview-Branches.
+- **Produktion nie selbst auslösen.** Vercel verfolgt keinen Branch automatisch als
+  Produktion; auch ein Push nach `main` erzeugt nur ein Preview-Deployment. Live geht ein
+  Stand erst, wenn der Projektinhaber dieses Deployment in Vercel per „Promote to
+  Production“ freigibt. Keine Promotes, Vercel-CLI-Produktions-Deployments oder Änderungen
+  an den Vercel-Einstellungen vornehmen.
 
 ## Neue Aufgabe beginnen
 
