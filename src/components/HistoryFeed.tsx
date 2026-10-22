@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { answerLabels, matchingAnswerPositions } from "@/lib/choiceAnswers.mjs";
 import ReactionComment from "./ReactionComment";
 import type { PublicQuestion } from "@/types/game";
@@ -62,13 +62,17 @@ function ReactionComposer({
   const [error, setError] = useState<string | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
 
-  // Grow with the text so longer comments stay readable while editing.
-  useLayoutEffect(() => {
+  // Grow with the text so longer comments stay readable while editing. A collapsed
+  // comment section measures 0, so it keeps the natural two-row height until shown.
+  const fitToText = useCallback(() => {
     const node = field.current;
     if (!node) return;
-    node.style.height = "auto";
-    node.style.height = `${node.scrollHeight}px`;
+    node.style.height = "";
+    if (!text || node.scrollHeight === 0) return;
+    const borders = node.offsetHeight - node.clientHeight;
+    node.style.height = `${Math.max(node.scrollHeight + borders, node.offsetHeight)}px`;
   }, [text]);
+  useLayoutEffect(fitToText, [fitToText]);
 
   useEffect(() => {
     if (replyTo) field.current?.focus();
@@ -120,6 +124,7 @@ function ReactionComposer({
         value={text}
         maxLength={MAX_REACTION_LENGTH}
         onChange={(e) => setText(e.target.value)}
+        onFocus={fitToText}
         placeholder="Etwas dazu sagen…"
         aria-label={replyTo ? `Antwort an ${replyTo.author.username} schreiben` : "Kommentar schreiben"}
         className="max-h-80 min-w-0 resize-none overflow-y-auto rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-800"
