@@ -110,6 +110,7 @@ export default function Dashboard({
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <ReleaseNotes />
+          <Link href="/entwuerfe" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium dark:border-zinc-700">Meine Entwürfe</Link>
           <Link href="/konto" className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium dark:border-zinc-700">Profil &amp; Einstellungen</Link>
           {isAdmin && (
             <Link

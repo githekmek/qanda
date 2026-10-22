@@ -14,6 +14,7 @@ export const maxDuration = 60;
 
 const reactionSchema = z.object({
   questionId: z.string().min(1),
+  replyToId: z.string().min(1).max(64).optional(),
   text: z.string().trim().min(1).max(MAX_REACTION_LENGTH),
 });
 
@@ -40,7 +41,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Dieser Raum ist archiviert" }, { status: 409 });
       }
 
-      const { questionId, text } = parsed.data;
+      const { questionId, text, replyToId } = parsed.data;
 
       const question = await loadQuestionWithRelations(questionId, tx);
       if (!question || question.roomId !== room.id) {
@@ -53,8 +54,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         );
       }
 
+      if (replyToId) {
+        const original = await tx.reaction.findFirst({ where: { id: replyToId, questionId: question.id } });
+        if (!original) return NextResponse.json({ error: "Der zitierte Kommentar gehört nicht zu dieser Frage." }, { status: 400 });
+      }
       const reaction = await tx.reaction.create({
-        data: { questionId: question.id, authorId: session.userId, text },
+        data: { questionId: question.id, authorId: session.userId, text, replyToId },
       });
 
       await enqueueNotification(tx, room.playerAId === session.userId ? room.playerBId : room.playerAId, room.id, "comment", reaction.id);

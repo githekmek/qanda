@@ -18,6 +18,8 @@ export type PublicQuestion = {
   parentQuestion: { id: string; text: string } | null;
   hasFollowUp: boolean;
   reactions: {
+    replyTo: { id: string; text: string; author: { username: string } } | null;
+    emojis: { emoji: string; count: number; mine: boolean }[];
     id: string;
     text: string;
     createdAt: string;

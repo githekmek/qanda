@@ -10,6 +10,8 @@ export default function ReleaseNotes() {
   const [isNew, setIsNew] = useState(false);
 
   useEffect(() => {
+    // Browser-only state is initialized after hydration to keep the server render stable.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsNew(window.localStorage.getItem(STORAGE_KEY) !== CURRENT_RELEASE);
   }, []);
 

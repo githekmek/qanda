@@ -1,5 +1,16 @@
 export const RELEASE_NOTES = [
   {
+    version: "2026.10.22",
+    date: "22. Oktober 2026",
+    title: "Entwürfe und lebendigere Kommentare",
+    items: [
+      "Private Fragenentwürfe lassen sich vorbereiten, speichern und später im eigenen Zug verwenden.",
+      "Kommentare bieten ein mitwachsendes Textfeld mit bis zu 800 Zeichen.",
+      "Mit 24 Emojis auf Kommentare reagieren und mit Zitat antworten.",
+      "Die Darstellung Standard heißt jetzt System und folgt weiterhin deiner Geräteeinstellung.",
+    ],
+  },
+  {
     version: "2026.10.21",
     date: "21. Oktober 2026",
     title: "App installieren, Push und Folgefragen",

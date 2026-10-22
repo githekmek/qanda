@@ -76,12 +76,12 @@ export default function ProfileSettings({ initial }: { initial: Profile }) {
     <section aria-labelledby="theme-title" className="profile-card mt-4 rounded-2xl border border-zinc-200 p-5 dark:border-zinc-700">
       <h2 id="theme-title" className="text-lg font-semibold">Darstellung</h2>
       <div role="group" aria-labelledby="theme-title" className="mt-4 grid grid-cols-3 gap-1 rounded-xl border border-zinc-200 p-1 dark:border-zinc-700">
-        {[["standard", "Standard"], ["colorful", "Bunt"], ["dark", "Dark"]].map(([value, label]) =>
+        {[["standard", "System"], ["colorful", "Bunt"], ["dark", "Dark"]].map(([value, label]) =>
           <button type="button" key={value} aria-pressed={profile.theme === value} disabled={busy}
             className={"rounded-lg px-1 py-3 text-sm disabled:opacity-60 " + (profile.theme === value ? "theme-selected" : "")}
             onClick={() => save({ theme: value })}>{profile.theme === value ? "✓ " : ""}{label}</button>)}
       </div>
-      <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-300">Standard folgt wie bisher deiner Geräteeinstellung. Deine Auswahl gilt auf allen Geräten.</p>
+      <p className="mt-3 text-xs text-zinc-600 dark:text-zinc-300">System folgt wie bisher deiner Geräteeinstellung. Deine Auswahl gilt auf allen Geräten.</p>
     </section>
     <p role="status" className="mt-4 text-center text-sm text-zinc-600 dark:text-zinc-300">{status || "Einstellungen werden automatisch gespeichert."}</p>
     {error && <p role="alert" className="mt-3 text-sm text-red-700 dark:text-red-300">{error} Bitte versuche es erneut.</p>}

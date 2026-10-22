@@ -118,6 +118,127 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     } });
   }
 
+  await t.test("drafts are private, allow incomplete questions, reject stale writes and consume atomically", async () => {
+    const a = await user(), b = await user(), r = await room(a, b);
+    const payload = { type: "TEXT", text: "", options: ["", ""], multiple: false, selectedOptions: [], selectedOption: null, freeTextAnswer: "", parent: null };
+    assert.equal((await request("/api/drafts", { method: "GET" })).status, 401);
+    const created = await request("/api/drafts", { actor: a, data: { payload } });
+    assert.equal(created.status, 200);
+    const draft = created.body;
+    assert.equal((await request("/api/drafts", { actor: b, method: "GET" })).body.length, 0);
+    assert.equal((await request("/api/drafts", { actor: b, data: { id: draft.id, version: draft.version, payload } })).status, 409);
+    assert.equal((await request("/api/drafts", { actor: b, method: "DELETE", data: { id: draft.id, version: draft.version } })).status, 409);
+    const changed = await request("/api/drafts", { actor: a, data: { id: draft.id, version: draft.version, payload: { ...payload, text: "Vorbereitet", freeTextAnswer: "Privat" } } });
+    assert.equal(changed.status, 200);
+    assert.equal((await request("/api/drafts", { actor: a, data: { id: draft.id, version: draft.version, payload } })).status, 409);
+    assert.equal(await db.question.count({ where: { roomId: r.id } }), 0);
+    const send = { type: "TEXT", text: "Vorbereitet", askerAnswer: "Privat", draftId: draft.id, draftVersion: changed.body.version };
+    assert.equal((await request("/api/rooms/" + r.id + "/ask", { actor: b, data: send })).status, 403);
+    assert.ok(await db.questionDraft.findUnique({ where: { id: draft.id } }));
+    const results = await Promise.all([0, 1].map(() => request("/api/rooms/" + r.id + "/ask", { actor: a, data: send })));
+    assert.equal(results.filter((res) => res.status === 200).length, 1);
+    assert.equal(await db.questionDraft.findUnique({ where: { id: draft.id } }), null);
+    const state = await request("/api/rooms/" + r.id + "/state", { actor: b, method: "GET" });
+    assert.equal(state.body.pendingQuestion.askerAnswer, undefined);
+  });
+
+  await t.test("comments accept 800 characters, quotes stay in their question and emojis are idempotent and private", async () => {
+    const a = await user(), b = await user(), outsider = await user(), r = await room(a, b);
+    const q = await db.question.create({ data: { roomId: r.id, askerId: a.id, type: "TEXT", text: "Frage", askerAnswer: "A", status: "ANSWERED" } });
+    const other = await db.question.create({ data: { roomId: r.id, askerId: a.id, type: "TEXT", text: "Andere", askerAnswer: "A", status: "ANSWERED" } });
+    const path = "/api/rooms/" + r.id + "/reaction";
+    assert.equal((await request(path, { actor: a, data: { questionId: q.id, text: "x".repeat(801) } })).status, 400);
+    const comment = await request(path, { actor: a, data: { questionId: q.id, text: "x".repeat(798) + "\nz" } });
+    assert.equal(comment.status, 200);
+    const original = comment.body.reactions[0];
+    assert.equal((await request(path, { actor: b, data: { questionId: other.id, text: "Falsches Zitat", replyToId: original.id } })).status, 400);
+    const reply = await request(path, { actor: b, data: { questionId: q.id, text: "Antwort", replyToId: original.id } });
+    assert.equal(reply.status, 200);
+    assert.equal(reply.body.reactions[1].replyTo.id, original.id);
+    const emojiPath = "/api/rooms/" + r.id + "/reaction-emoji";
+    const data = { reactionId: original.id, emoji: "❤️", active: true };
+    assert.equal((await request(emojiPath, { actor: outsider, data })).status, 404);
+    assert.equal((await request(emojiPath, { actor: b, data: { ...data, emoji: "invalid" } })).status, 400);
+    for (let i = 0; i < 2; i++) assert.equal((await request(emojiPath, { actor: b, data })).status, 200);
+    assert.equal(await db.commentEmoji.count({ where: { reactionId: original.id } }), 1);
+    const state = await request("/api/rooms/" + r.id + "/state", { actor: b, method: "GET" });
+    const publicComment = state.body.history.find((item) => item.id === q.id).reactions[0];
+    assert.deepEqual(publicComment.emojis, [{ emoji: "❤️", count: 1, mine: true }]);
+    assert.equal((await request(emojiPath, { actor: b, data: { ...data, active: false } })).status, 200);
+    assert.equal(await db.commentEmoji.count({ where: { reactionId: original.id } }), 0);
+    await db.room.update({ where: { id: r.id }, data: { archivedAt: new Date() } });
+    assert.equal((await request(emojiPath, { actor: b, data })).status, 409);
+    assert.equal(await db.reaction.count({ where: { questionId: q.id } }), 2);
+  });
+
+  await t.test("browser: incomplete draft survives reload and loads in the question form", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    try {
+      const a = await user(), b = await user(), r = await room(a, b);
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const page = await context.newPage();
+      await page.goto(servers[0].origin + "/entwuerfe");
+      await page.getByRole("button", { name: "Neuer Entwurf", exact: true }).click();
+      await page.getByLabel("Deine Frage", { exact: true }).fill("Mein privater Entwurf");
+      const saveResponse = page.waitForResponse((res) => res.url().endsWith("/api/drafts") && res.request().method() === "POST");
+      await page.getByRole("button", { name: "Entwurf speichern", exact: true }).click();
+      const saved = await saveResponse;
+      assert.equal(saved.status(), 200, await saved.text());
+      await page.getByRole("status").filter({ hasText: "Entwurf gespeichert." }).waitFor();
+      await page.reload();
+      await page.getByRole("button").filter({ hasText: "Mein privater Entwurf" }).first().click();
+      assert.equal(await page.getByLabel("Deine Frage", { exact: true }).inputValue(), "Mein privater Entwurf");
+      await page.goto(servers[0].origin + "/room/" + r.id);
+      await page.getByRole("button", { name: "Entwurf laden", exact: true }).click();
+      await page.getByRole("button").filter({ hasText: "Mein privater Entwurf" }).first().click();
+      assert.equal(await page.getByLabel("Deine Frage", { exact: true }).inputValue(), "Mein privater Entwurf");
+      await page.getByLabel("Deine eigene Antwort", { exact: true }).fill("Geheim");
+      await page.getByRole("button", { name: "Frage stellen", exact: true }).click();
+      await page.getByText("Deine Frage wartet noch auf eine Antwort.").waitFor();
+      assert.equal(await db.questionDraft.count({ where: { userId: a.id } }), 0);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    } finally { await browser.close(); }
+  });
+
+  await t.test("browser: multiline comments, emoji toggle and quoted reply work on mobile", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    try {
+      const a = await user(), b = await user(), r = await room(a, b);
+      const q = await db.question.create({ data: { roomId: r.id, askerId: b.id, type: "TEXT", text: "Kommentar-Test", askerAnswer: "Alt", status: "ANSWERED" } });
+      const original = await db.reaction.create({ data: { questionId: q.id, authorId: b.id, text: "Originalkommentar" } });
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const page = await context.newPage();
+      await page.goto(servers[0].origin + "/room/" + r.id);
+      await page.getByRole("button", { name: "Kommentare (1)", exact: false }).click();
+      await page.getByRole("button", { name: "Emoji auswählen", exact: true }).click();
+      const emojiResponse = page.waitForResponse((res) => res.url().endsWith("/reaction-emoji"));
+      await page.getByRole("button", { name: "Mit ❤️ reagieren", exact: true }).click();
+      const reacted = await emojiResponse;
+      assert.equal(reacted.status(), 200, await reacted.text());
+      await page.getByRole("button", { name: "❤️: 1 Reaktionen", exact: true }).waitFor();
+      await page.getByRole("button", { name: "❤️: 1 Reaktionen", exact: true }).click();
+      await page.getByRole("button", { name: "❤️: 1 Reaktionen", exact: true }).waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Antworten", exact: true }).click();
+      const input = page.getByRole("textbox", { name: "Kommentar schreiben" });
+      assert.equal(await input.evaluate((el) => el.tagName), "TEXTAREA");
+      assert.equal(await input.getAttribute("maxlength"), "800");
+      await input.fill("Erste Zeile");
+      await input.press("Enter");
+      await input.pressSequentially("Zweite Zeile");
+      assert.equal(await db.reaction.count({ where: { questionId: q.id } }), 1);
+      await page.getByRole("button", { name: "Senden", exact: true }).click();
+      await page.getByRole("link", { name: "Antwort an " + b.username }).waitFor();
+      const reply = await db.reaction.findFirst({ where: { questionId: q.id, authorId: a.id } });
+      assert.equal(reply.replyToId, original.id);
+      assert.equal(reply.text, "Erste Zeile\nZweite Zeile");
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    } finally { await browser.close(); }
+  });
+
   await t.test("admin setup creates exactly one admin under concurrent registration", async () => {
     const results = await Promise.all(Array.from({ length: 5 }, (_, i) =>
       request("/api/auth/register", { data: { username: "setup_user_" + i, password, code: setupCode } })
@@ -825,7 +946,8 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.equal((await request("/api/auth/recovery", {
       data: { action: "reset", token: secondToken, password },
     })).status, 400, "the link is single-use");
-    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).status, 401);
+    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).body.user, null);
+    assert.equal((await request("/api/profile", { actor: target, method: "GET" })).status, 401);
     assert.equal((await request("/api/auth/login", {
       data: { username: target.username, password: "old123" },
     })).status, 401);
@@ -1068,7 +1190,7 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
         assert.equal(await page.getByRole("switch", { name: label }).getAttribute("aria-checked"), "false");
       }
       await mkdir("test-results", { recursive: true });
-      for (const [name, theme] of [["Bunt", "colorful"], ["Dark", "dark"], ["Standard", "standard"]]) {
+      for (const [name, theme] of [["Bunt", "colorful"], ["Dark", "dark"], ["System", "standard"]]) {
         const saved = page.waitForResponse(res => res.url().endsWith("/api/profile") && res.request().method() === "PATCH");
         await page.getByRole("button", { name, exact: false }).filter({ hasText: name }).click();
         assert.equal((await saved).status(), 200);

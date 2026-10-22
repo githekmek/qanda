@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, cp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, cp, mkdir, rm, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isolatedDatabase, command, succeeded, prismaCli } from "./database.mjs";
@@ -57,13 +57,13 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       name: "Archiv", inviteCode: "ARCHIVEDINVITE", playerAId: a.id,
       archivedAt: new Date("2026-01-01"), currentAskerId: a.id,
     } });
-    const question = await db.question.create({ data: {
+    const question = await db.question.create({ select: { id: true }, data: {
       roomId: room.id, askerId: a.id, type: "TEXT", text: "Private Frage",
       askerAnswer: "Private Antwort A", status: "ANSWERED",
     } });
     await db.answer.create({ data: { questionId: question.id, responderId: b.id, value: "Private Antwort B" } });
-    await db.reaction.create({ data: { questionId: question.id, authorId: a.id, text: "Reaktion" } });
-    await db.question.create({ data: {
+    await db.reaction.create({ select: { id: true }, data: { questionId: question.id, authorId: a.id, text: "Reaktion" } });
+    await db.question.create({ select: { id: true }, data: {
       roomId: room.id, askerId: b.id, type: "TEXT", text: "Offene Frage", askerAnswer: "Noch geheim",
     } });
     await db.accessCode.create({ data: { code: "EXISTING", createdById: a.id } });
@@ -71,18 +71,18 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       name: "Offenes Multiple Choice", inviteCode: "PENDINGMC", playerAId: a.id,
       playerBId: b.id, currentAskerId: a.id,
     } });
-    await db.question.create({ data: {
+    await db.question.create({ select: { id: true }, data: {
       roomId: singleRoom.id, askerId: a.id, type: "MULTIPLE_CHOICE",
       text: "Offene Einfachauswahl", options: '["Alt A","Alt B"]', askerAnswer: "1",
     } });
-    const completed = await db.question.create({ data: {
+    const completed = await db.question.create({ select: { id: true }, data: {
       roomId: singleRoom.id, askerId: b.id, type: "MULTIPLE_CHOICE",
       text: "Alte Einfachauswahl", options: '["A","B"]', askerAnswer: "0", status: "ANSWERED",
     } });
     await db.answer.create({ data: { questionId: completed.id, responderId: a.id, value: "1" } });
 
     await db.roomReactionVisit.create({ data: { userId: b.id, roomId: room.id } });
-    const reaction = await db.reaction.findFirst({ where: { questionId: question.id } });
+    const reaction = await db.reaction.findFirst({ select: { id: true }, where: { questionId: question.id } });
     await db.reactionRead.create({ data: { userId: b.id, reactionId: reaction.id } });
 
     async function snapshot() {
@@ -92,7 +92,7 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
           ? { id: true, username: true, passwordHash: true, isAdmin: true, createdAt: true }
           : model === "question"
             ? { id: true, type: true, text: true, options: true, askerAnswer: true, status: true, createdAt: true, roomId: true, askerId: true }
-            : undefined;
+            : model === "reaction" ? { id: true, text: true, createdAt: true, questionId: true, authorId: true } : undefined;
         result[model] = await db[model].findMany({ orderBy: { id: "asc" }, ...(select ? { select } : {}) });
       }
       result.visits = await db.roomReactionVisit.findMany({ orderBy: { userId: "asc" } });
@@ -173,4 +173,49 @@ test("profile migration preserves verified addresses, session versions and outst
     assert.equal(user.notifyComments, false);
     assert.deepEqual(await db.recoveryToken.findMany(), before);
   } finally { await ctx.close(); }
+});
+
+test("draft/comment release preserves the complete preceding production state", async () => {
+  const ctx = await isolatedDatabase();
+  const dir = await mkdtemp(join(tmpdir(), "qanda-before-drafts-"));
+  try {
+    await mkdir(join(dir, "migrations"));
+    await cp("prisma/schema.prisma", join(dir, "schema.prisma"));
+    for (const name of await readdir("prisma/migrations")) {
+      if (name !== "20261022000000_drafts_comment_replies") await cp(join("prisma/migrations", name), join(dir, "migrations", name), { recursive: true });
+    }
+    succeeded(command([prismaCli, "migrate", "deploy", "--schema", join(dir, "schema.prisma")], ctx.url));
+    const db = ctx.db;
+    const a = await db.user.create({ data: { username: "preserved-a", passwordHash: "keep", sessionVersion: 4, theme: "colorful", email: "keep@example.test", emailVerifiedAt: new Date(), notifyTurn: true } });
+    const b = await db.user.create({ data: { username: "preserved-b", passwordHash: "keep-b" } });
+    const room = await db.room.create({ data: { playerAId: a.id, playerBId: b.id, currentAskerId: a.id, inviteCode: "KEEP-INVITE" } });
+    const question = await db.question.create({ data: { roomId: room.id, askerId: a.id, type: "TEXT", text: "Offen", askerAnswer: "Geheim" } });
+    const resolved = await db.question.create({ data: { roomId: room.id, askerId: b.id, type: "TEXT", text: "Beantwortet", askerAnswer: "Alt", status: "ANSWERED", answer: { create: { responderId: a.id, value: "Alt" } } } });
+    const reaction = await db.reaction.create({ select: { id: true }, data: { questionId: resolved.id, authorId: b.id, text: "Bestehender Kommentar" } });
+    await db.reactionRead.create({ data: { userId: a.id, reactionId: reaction.id } });
+    await db.roomReactionVisit.create({ data: { userId: a.id, roomId: room.id } });
+    await db.notification.create({ data: { eventKey: "preserve-push", userId: a.id, roomId: room.id, kind: "turn", channel: "push", dueAt: new Date() } });
+    await db.pushSubscription.create({ data: { userId: a.id, endpoint: "https://example.test/push", p256dh: "keep", auth: "keep", notifyTurn: true } });
+    await db.recoveryToken.create({ data: { tokenHash: "b".repeat(64), userId: a.id, purpose: "reset", email: "keep@example.test", sessionVersion: 4, expiresAt: new Date("2030-01-01") } });
+    async function snapshot() {
+      const result = {};
+      for (const table of ["User", "Room", "Question", "Answer", "Reaction", "ReactionRead", "RoomReactionVisit", "Notification", "PushSubscription", "RecoveryToken", "AccessCode"]) {
+        // Table names come only from the fixed list above.
+        result[table] = await db.$queryRawUnsafe('SELECT to_jsonb(t)' + (table === "Reaction" ? " - 'replyToId'" : "") + ' AS row FROM "' + table + '" t ORDER BY to_jsonb(t)::text');
+      }
+      return result;
+    }
+    const before = await snapshot();
+    succeeded(command(["scripts/migrate-deploy.mjs"], ctx.url));
+    assert.deepEqual(await snapshot(), before);
+    assert.equal(await db.questionDraft.count(), 0);
+    assert.equal(await db.commentEmoji.count(), 0);
+    assert.equal((await db.reaction.findUnique({ where: { id: reaction.id } })).replyToId, null);
+    assert.equal((await db.question.findUnique({ where: { id: question.id } })).status, "PENDING");
+    succeeded(command(["scripts/migrate-deploy.mjs"], ctx.url));
+    assert.deepEqual(await snapshot(), before);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    await ctx.close();
+  }
 });

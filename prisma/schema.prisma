@@ -31,6 +31,8 @@ model User {
   notifyComments Boolean @default(false)
   notifications Notification[]
   pushSubscriptions PushSubscription[]
+  questionDrafts QuestionDraft[]
+  commentEmojis CommentEmoji[]
   isAdmin      Boolean  @default(false)
   createdAt    DateTime @default(now())
 
@@ -130,6 +132,11 @@ model Reaction {
   authorId String
   author   User   @relation("ReactionAuthor", fields: [authorId], references: [id])
   reads ReactionRead[]
+  replyToId String?
+  replyTo Reaction? @relation("CommentReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies Reaction[] @relation("CommentReplies")
+  emojis CommentEmoji[]
+  @@index([replyToId])
 
   @@index([questionId, createdAt])
 }
@@ -208,4 +215,25 @@ model Notification {
   attempts Int @default(0)
   @@index([dueAt, lockedUntil])
   @@index([userId, kind, channel])
+}
+
+model QuestionDraft {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payload String
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([userId, updatedAt])
+}
+
+model CommentEmoji {
+  reactionId String
+  reaction Reaction @relation(fields: [reactionId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji String
+  @@id([reactionId, userId, emoji])
+  @@index([userId])
 }
