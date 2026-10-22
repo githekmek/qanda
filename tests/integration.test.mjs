@@ -182,7 +182,10 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await page.goto(servers[0].origin + "/entwuerfe");
       await page.getByRole("button", { name: "Neuer Entwurf", exact: true }).click();
       await page.getByLabel("Deine Frage", { exact: true }).fill("Mein privater Entwurf");
+      const saveResponse = page.waitForResponse((res) => res.url().endsWith("/api/drafts") && res.request().method() === "POST");
       await page.getByRole("button", { name: "Entwurf speichern", exact: true }).click();
+      const saved = await saveResponse;
+      assert.equal(saved.status(), 200, await saved.text());
       await page.getByRole("status").filter({ hasText: "Entwurf gespeichert." }).waitFor();
       await page.reload();
       await page.getByRole("button").filter({ hasText: "Mein privater Entwurf" }).first().click();
@@ -212,7 +215,10 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await page.goto(servers[0].origin + "/room/" + r.id);
       await page.getByRole("button", { name: "Kommentare (1)", exact: false }).click();
       await page.getByRole("button", { name: "Emoji auswählen", exact: true }).click();
+      const emojiResponse = page.waitForResponse((res) => res.url().endsWith("/reaction-emoji"));
       await page.getByRole("button", { name: "Mit ❤️ reagieren", exact: true }).click();
+      const reacted = await emojiResponse;
+      assert.equal(reacted.status(), 200, await reacted.text());
       await page.getByRole("button", { name: "❤️: 1 Reaktionen", exact: true }).waitFor();
       await page.getByRole("button", { name: "❤️: 1 Reaktionen", exact: true }).click();
       await page.getByRole("button", { name: "❤️: 1 Reaktionen", exact: true }).waitFor({ state: "detached" });
@@ -940,7 +946,8 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.equal((await request("/api/auth/recovery", {
       data: { action: "reset", token: secondToken, password },
     })).status, 400, "the link is single-use");
-    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).status, 401);
+    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).body.user, null);
+    assert.equal((await request("/api/profile", { actor: target, method: "GET" })).status, 401);
     assert.equal((await request("/api/auth/login", {
       data: { username: target.username, password: "old123" },
     })).status, 401);
