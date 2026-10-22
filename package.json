@@ -18,13 +18,13 @@
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.12",
-    "next": "16.3.8",
+    "next": "16.4.2",
+    "nodemailer": "10.1.1",
     "prisma": "^6.19.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "zod": "^4.6.5",
-    "nodemailer": "10.1.1",
-    "web-push": "3.6.7"
+    "web-push": "3.6.7",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
