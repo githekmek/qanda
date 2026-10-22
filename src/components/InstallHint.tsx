@@ -10,6 +10,8 @@ export default function InstallHint() {
   useEffect(() => {
     const standalone = window.matchMedia("(display-mode: standalone)").matches ||
       Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+    // Browser-only state is read after hydration so server and client render the same markup.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVisible(!standalone && window.localStorage.getItem(KEY) !== "1");
   }, []);
   if (!visible) return null;

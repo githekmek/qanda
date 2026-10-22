@@ -49,6 +49,9 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       ('existing-a', 'existing_a', 'unchanged_hash_a', true),
       ('existing-b', 'existing_b', 'unchanged_hash_b', false)`;
     const a = { id: "existing-a" }, b = { id: "existing-b" };
+    // The current client would read back columns that later migrations add, so
+    // writes against the old schema only return the id.
+    const old = { select: { id: true } };
     const room = await db.room.create({ data: {
       name: "Bestehender Raum", inviteCode: "ORIGINALINVITE", playerAId: a.id,
       playerBId: b.id, currentAskerId: b.id,
@@ -60,12 +63,12 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     const question = await db.question.create({ data: {
       roomId: room.id, askerId: a.id, type: "TEXT", text: "Private Frage",
       askerAnswer: "Private Antwort A", status: "ANSWERED",
-    } });
+    }, ...old });
     await db.answer.create({ data: { questionId: question.id, responderId: b.id, value: "Private Antwort B" } });
-    await db.reaction.create({ data: { questionId: question.id, authorId: a.id, text: "Reaktion" } });
+    await db.reaction.create({ data: { questionId: question.id, authorId: a.id, text: "Reaktion" }, ...old });
     await db.question.create({ data: {
       roomId: room.id, askerId: b.id, type: "TEXT", text: "Offene Frage", askerAnswer: "Noch geheim",
-    } });
+    }, ...old });
     await db.accessCode.create({ data: { code: "EXISTING", createdById: a.id } });
     const singleRoom = await db.room.create({ data: {
       name: "Offenes Multiple Choice", inviteCode: "PENDINGMC", playerAId: a.id,
@@ -74,15 +77,15 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     await db.question.create({ data: {
       roomId: singleRoom.id, askerId: a.id, type: "MULTIPLE_CHOICE",
       text: "Offene Einfachauswahl", options: '["Alt A","Alt B"]', askerAnswer: "1",
-    } });
+    }, ...old });
     const completed = await db.question.create({ data: {
       roomId: singleRoom.id, askerId: b.id, type: "MULTIPLE_CHOICE",
       text: "Alte Einfachauswahl", options: '["A","B"]', askerAnswer: "0", status: "ANSWERED",
-    } });
+    }, ...old });
     await db.answer.create({ data: { questionId: completed.id, responderId: a.id, value: "1" } });
 
     await db.roomReactionVisit.create({ data: { userId: b.id, roomId: room.id } });
-    const reaction = await db.reaction.findFirst({ where: { questionId: question.id } });
+    const reaction = await db.reaction.findFirst({ where: { questionId: question.id }, ...old });
     await db.reactionRead.create({ data: { userId: b.id, reactionId: reaction.id } });
 
     async function snapshot() {

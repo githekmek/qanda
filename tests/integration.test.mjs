@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 import { createHash } from "node:crypto";
@@ -28,7 +29,7 @@ async function startServer(url) {
   const port = socket.address().port;
   await new Promise((resolve) => socket.close(resolve));
   const child = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "-p", String(port)], {
-    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0", GMAIL_USER: "sender@gmail.com", GMAIL_APP_PASSWORD: "isolated-test-password", VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: "mailto:push@example.test", CRON_SECRET: "isolated-cron-secret-at-least-32-characters", APP_URL: "https://qanda.example.test", TEST_MAIL_URL: mailUrl, NODE_OPTIONS: "--import=" + require.resolve("./mockGmail.mjs") },
+    env: { ...process.env, DATABASE_URL: url, SESSION_SECRET: secret, ADMIN_SETUP_CODE: setupCode, VERCEL: "0", GMAIL_USER: "sender@gmail.com", GMAIL_APP_PASSWORD: "isolated-test-password", VAPID_PUBLIC_KEY: vapid.publicKey, VAPID_PRIVATE_KEY: vapid.privateKey, VAPID_SUBJECT: "mailto:push@example.test", CRON_SECRET: "isolated-cron-secret-at-least-32-characters", APP_URL: "https://qanda.example.test", TEST_MAIL_URL: mailUrl, NODE_OPTIONS: "--import=" + pathToFileURL(require.resolve("./mockGmail.mjs")).href },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let logs = "";
@@ -903,7 +904,8 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.equal(stored[0].tokenHash, tokenHash(firstToken));
     assert.equal(stored[0].email, "");
     assert.ok(!JSON.stringify(stored).includes(firstToken));
-    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).status, 200,
+    // /api/auth/me always answers 200; a valid session is visible in its body.
+    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).body.user?.id, target.id,
       "creating a link must not end an existing session");
 
     const second = await request(endpoint, { actor: admin, data: { username: target.username }, server: 1 });
@@ -921,7 +923,8 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.equal((await request("/api/auth/recovery", {
       data: { action: "reset", token: secondToken, password },
     })).status, 400, "the link is single-use");
-    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).status, 401);
+    assert.equal((await request("/api/auth/me", { actor: target, method: "GET" })).body.user, null,
+      "using the link ends the old session");
     assert.equal((await request("/api/auth/login", {
       data: { username: target.username, password: "old123" },
     })).status, 401);
