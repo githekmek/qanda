@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 
 export { MAX_OPTIONS, MIN_OPTIONS } from "@/lib/questionLimits";
 export const MAX_TEXT_LENGTH = 255;
-export const MAX_REACTION_LENGTH = 500;
+export const MAX_REACTION_LENGTH = 800;
 
 export type PublicQuestion = {
   id: string;
@@ -25,6 +25,8 @@ export type PublicQuestion = {
   parentQuestion: { id: string; text: string } | null;
   hasFollowUp: boolean;
   reactions: {
+    replyTo: { id: string; text: string; author: { username: string } } | null;
+    emojis: { emoji: string; count: number; mine: boolean }[];
     id: string;
     text: string;
     createdAt: string;
@@ -37,7 +39,7 @@ type QuestionWithRelations = NonNullable<Awaited<ReturnType<typeof loadQuestionW
 export const questionInclude = {
   asker: true,
   answer: { include: { responder: true } },
-  reactions: { include: { author: true }, orderBy: { createdAt: "asc" } },
+  reactions: { include: { author: true, replyTo: { select: { id: true, text: true, author: { select: { username: true } } } }, emojis: true }, orderBy: { createdAt: "asc" } },
   parentQuestion: { select: { id: true, text: true } },
   followUp: { select: { id: true } },
 } as const;
@@ -76,6 +78,8 @@ export function serializeQuestionForViewer(
     hasFollowUp: Boolean(question.followUp),
     reactions: question.reactions.map((reaction) => ({
       id: reaction.id,
+      replyTo: reaction.replyTo,
+      emojis: [...new Set(reaction.emojis.map((e) => e.emoji))].map((emoji) => ({ emoji, count: reaction.emojis.filter((e) => e.emoji === emoji).length, mine: reaction.emojis.some((e) => e.emoji === emoji && e.userId === viewerId) })),
       text: reaction.text,
       createdAt: reaction.createdAt.toISOString(),
       author: { id: reaction.author.id, username: reaction.author.username },

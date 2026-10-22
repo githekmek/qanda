@@ -1,6 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import DraftList from "./DraftList";
+import type { Draft, DraftPayload } from "@/lib/drafts";
 import type { QuestionType } from "@/types/game";
 import {
   CATEGORIES,
@@ -39,24 +41,58 @@ export default function AskForm({
   onSubmitted,
   askedQuestions,
   followUpTo,
-  onCancelFollowUp,
+  draftOnly = false,
+  initialDraft,
+  onSaved,
 }: {
-  roomId: string;
+  roomId?: string;
+  draftOnly?: boolean;
+  initialDraft?: Draft;
+  onSaved?: () => void;
   onSubmitted: () => void;
   askedQuestions: string[];
   followUpTo?: { id: string; text: string } | null;
   onCancelFollowUp?: () => void;
 }) {
-  const [type, setType] = useState<QuestionType>("TEXT");
+  const [type, setType] = useState<QuestionType>(initialDraft?.payload.type ?? "TEXT");
   const [categories, setCategories] = useState<QuestionCategory[]>([...CATEGORIES]);
-  const [text, setText] = useState("");
-  const [options, setOptions] = useState<string[]>(["", ""]);
-  const [multiple, setMultiple] = useState(false);
-  const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [freeTextAnswer, setFreeTextAnswer] = useState("");
+  const [text, setText] = useState(initialDraft?.payload.text ?? "");
+  const [options, setOptions] = useState<string[]>(initialDraft?.payload.options ?? ["", ""]);
+  const [multiple, setMultiple] = useState(initialDraft?.payload.multiple ?? false);
+  const [selectedOptions, setSelectedOptions] = useState<number[]>(initialDraft?.payload.selectedOptions ?? []);
+  const [selectedOption, setSelectedOption] = useState<number | null>(initialDraft?.payload.selectedOption ?? null);
+  const [freeTextAnswer, setFreeTextAnswer] = useState(initialDraft?.payload.freeTextAnswer ?? "");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [draft, setDraft] = useState<Draft | undefined>(initialDraft);
+  const [showDrafts, setShowDrafts] = useState(false);
+  const [status, setStatus] = useState("");
+  const [parent, setParent] = useState<DraftPayload["parent"]>(initialDraft?.payload.parent ?? (followUpTo && roomId ? { ...followUpTo, roomId } : null));
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  function loadDraft(value: Draft) {
+    if (dirty && !window.confirm("Ungespeicherte Eingaben durch diesen Entwurf ersetzen?")) return;
+    const p = value.payload;
+    setDraft(value); setType(p.type); setText(p.text); setOptions(p.options); setMultiple(p.multiple);
+    setSelectedOptions(p.selectedOptions); setSelectedOption(p.selectedOption); setFreeTextAnswer(p.freeTextAnswer);
+    setParent(p.parent); setShowDrafts(false); setDirty(false); setStatus(""); setError(null);
+  }
+  async function saveDraft(asNew = false) {
+    setLoading(true); setError(null); setStatus("");
+    const payload: DraftPayload = { type: type === "TEXT" ? "TEXT" : "MULTIPLE_CHOICE", text, options, multiple, selectedOptions, selectedOption, freeTextAnswer, parent };
+    try {
+      const res = await fetch("/api/drafts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: asNew ? undefined : draft?.id, version: asNew ? undefined : draft?.version, payload }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Speichern fehlgeschlagen");
+      setDraft(data); setDirty(false); setStatus("Entwurf gespeichert."); onSaved?.();
+    } catch (error) { setError(error instanceof Error ? error.message : "Speichern fehlgeschlagen"); }
+    finally { setLoading(false); }
+  }
   const questionFieldRef = useRef<HTMLTextAreaElement>(null);
 
   function toggleCategory(category: QuestionCategory) {
@@ -70,6 +106,7 @@ export default function AskForm({
     if (!drawn) return;
 
     setText(drawn);
+    setDirty(true);
     setError(null);
     // The button sits below the fields it fills, so point the eye back up there.
     questionFieldRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -77,14 +114,17 @@ export default function AskForm({
   }
 
   function updateOption(index: number, value: string) {
+    setDirty(true);
     setOptions((prev) => prev.map((o, i) => (i === index ? value : o)));
   }
 
   function addOption() {
+    setDirty(true);
     setOptions((prev) => (prev.length < MAX_OPTIONS ? [...prev, ""] : prev));
   }
 
   function removeOption(index: number) {
+    setDirty(true);
     setOptions((prev) => prev.filter((_, i) => i !== index));
     setSelectedOptions((prev) => prev.filter((i) => i !== index).map((i) => i > index ? i - 1 : i));
     setSelectedOption((prev) => (prev === index ? null : prev !== null && prev > index ? prev - 1 : prev));
@@ -93,6 +133,7 @@ export default function AskForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (draftOnly) { await saveDraft(); return; }
 
     if (!text.trim()) {
       setError("Bitte eine Frage eingeben");
@@ -130,7 +171,9 @@ export default function AskForm({
           text: text.trim(),
           options: type === "MULTIPLE_CHOICE" ? trimmedOptions : undefined,
           askerAnswer,
-          parentQuestionId: followUpTo?.id,
+          parentQuestionId: parent?.id,
+          draftId: draft?.id,
+          draftVersion: draft?.version,
         }),
       });
       const data = await res.json();
@@ -138,6 +181,8 @@ export default function AskForm({
         setError(data.error ?? "Etwas ist schiefgelaufen");
         return;
       }
+      setDirty(false);
+      setDraft(undefined);
       setText("");
       setOptions(["", ""]);
       setSelectedOption(null);
@@ -155,31 +200,37 @@ export default function AskForm({
     <form
       id="question-form"
       onSubmit={handleSubmit}
+      onChange={() => { setDirty(true); setStatus(""); }}
       className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950"
     >
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">
-            {followUpTo ? "Du bist dran: Stelle eine Folgefrage" : "Du bist dran: Stelle eine Frage"}
+            {draftOnly ? "Fragenentwurf" : parent ? "Du bist dran: Stelle eine Folgefrage" : "Du bist dran: Stelle eine Frage"}
           </h2>
-          {followUpTo && onCancelFollowUp && (
-            <button type="button" onClick={onCancelFollowUp}
+          {parent && (
+            <button type="button" onClick={() => { setParent(null); setDirty(true); }}
               className="text-sm text-zinc-500 underline hover:text-zinc-800 dark:hover:text-zinc-200">
               Normale Frage stellen
             </button>
           )}
         </div>
-        {followUpTo && (
+        {parent && (
           <p className="rounded-xl bg-indigo-50 px-3 py-2 text-sm text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100">
-            Folgefrage zu: <span className="font-medium">{followUpTo.text}</span>
+            Folgefrage zu: <span className="font-medium">{parent.text}</span>
           </p>
         )}
       </div>
 
+      {!draftOnly && <div className="flex flex-col gap-3">
+        <button type="button" disabled={loading} onClick={() => setShowDrafts(!showDrafts)} aria-expanded={showDrafts} className="self-start underline">Entwurf laden</button>
+        {showDrafts && <DraftList roomId={roomId} onSelect={loadDraft} />}
+      </div>}
+      <fieldset disabled={loading} className="contents">
       <div className="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
         <button
           type="button"
-          onClick={() => setType("MULTIPLE_CHOICE")}
+          onClick={() => { setType("MULTIPLE_CHOICE"); setDirty(true); }}
           className={`rounded-md py-1.5 text-sm font-medium transition-colors ${
             type === "MULTIPLE_CHOICE"
               ? "bg-white shadow-sm dark:bg-zinc-800"
@@ -190,7 +241,7 @@ export default function AskForm({
         </button>
         <button
           type="button"
-          onClick={() => setType("TEXT")}
+          onClick={() => { setType("TEXT"); setDirty(true); }}
           className={`rounded-md py-1.5 text-sm font-medium transition-colors ${
             type === "TEXT"
               ? "bg-white shadow-sm dark:bg-zinc-800"
@@ -361,15 +412,21 @@ export default function AskForm({
         </button>
       </fieldset>
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      </fieldset>
+      {status && <p role="status" className="text-sm text-green-700 dark:text-green-300">{status}</p>}
+      {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      <button
+      <div className="flex flex-wrap gap-3">
+        <button type="button" disabled={loading} onClick={() => saveDraft()} className="min-h-11 rounded-lg border px-4">Entwurf speichern</button>
+        {draft && <button type="button" disabled={loading} onClick={() => saveDraft(true)} className="min-h-11 px-2 underline">Als neuen Entwurf speichern</button>}
+      </div>
+      {!draftOnly && <button
         type="submit"
         disabled={loading}
         className="rounded-lg bg-zinc-900 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
       >
-        {loading ? "Wird gesendet…" : followUpTo ? "Folgefrage stellen" : "Frage stellen"}
-      </button>
+        {loading ? "Wird gespeichert…" : parent ? "Folgefrage stellen" : "Frage stellen"}
+      </button>}
     </form>
   );
 }

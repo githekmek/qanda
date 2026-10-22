@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { answerLabels, matchingAnswerPositions } from "@/lib/choiceAnswers.mjs";
+import GrowingTextarea from "./GrowingTextarea";
 import ReactionComment from "./ReactionComment";
 import type { PublicQuestion } from "@/types/game";
 
-const MAX_REACTION_LENGTH = 500;
+const MAX_REACTION_LENGTH = 800;
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleString("de-DE", {
@@ -46,10 +47,14 @@ function ReactionComposer({
   roomId,
   questionId,
   onSubmitted,
+  replyTo,
+  onCancelReply,
 }: {
   roomId: string;
   questionId: string;
   onSubmitted: () => void;
+  replyTo: PublicQuestion["reactions"][number] | null;
+  onCancelReply: () => void;
 }) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -65,7 +70,7 @@ function ReactionComposer({
       const res = await fetch(`/api/rooms/${roomId}/reaction`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId, text: text.trim() }),
+        body: JSON.stringify({ questionId, text: text.trim(), replyToId: replyTo?.id }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -73,6 +78,7 @@ function ReactionComposer({
         return;
       }
       setText("");
+      onCancelReply();
       onSubmitted();
     } catch {
       setError("Verbindung zum Server fehlgeschlagen");
@@ -83,9 +89,14 @@ function ReactionComposer({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
+      {replyTo && <blockquote className="rounded-lg border-l-2 border-indigo-400 bg-indigo-50 p-3 text-sm dark:bg-indigo-950/40">
+        <strong>Antwort an {replyTo.author.username}</strong>
+        <p className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words">{replyTo.text}</p>
+        <button type="button" onClick={onCancelReply} className="mt-2 underline">Zitat entfernen</button>
+      </blockquote>}
+      <div className="flex items-end gap-2">
+        <GrowingTextarea
+          id={`comment-input-${questionId}`}
           value={text}
           maxLength={MAX_REACTION_LENGTH}
           onChange={(e) => setText(e.target.value)}
@@ -101,6 +112,7 @@ function ReactionComposer({
           Senden
         </button>
       </div>
+      <span className="text-right text-xs text-zinc-500">{text.length}/{MAX_REACTION_LENGTH}</span>
       {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
     </form>
   );
@@ -133,6 +145,7 @@ export default function HistoryFeed({
   canAskFollowUp: boolean;
   onFollowUp: (question: { id: string; text: string }) => void;
 }) {
+  const [replyTarget, setReplyTarget] = useState<{ questionId: string; reaction: PublicQuestion["reactions"][number] } | null>(null);
   useEffect(() => {
     if (!jump) return;
     const element = document.getElementById(`reaction-${jump.id}`);
@@ -216,9 +229,10 @@ export default function HistoryFeed({
                 {q.reactions.map((reaction) => (
                   <ReactionComment key={reaction.id} reaction={reaction}
                     isNew={Boolean(highlighted[reaction.id]) && reaction.author.id !== meId}
-                    expanded={open} meId={meId} onSeen={onSeen} />
+                    expanded={open} meId={meId} onSeen={onSeen} roomId={roomId} readOnly={readOnly} onChanged={onReacted}
+                    onReply={() => { setReplyTarget({ questionId: q.id, reaction }); requestAnimationFrame(() => document.getElementById(`comment-input-${q.id}`)?.focus()); }} />
                 ))}
-                {!readOnly && <ReactionComposer roomId={roomId} questionId={q.id} onSubmitted={onReacted} />}
+                {!readOnly && <ReactionComposer roomId={roomId} questionId={q.id} onSubmitted={onReacted} replyTo={replyTarget?.questionId === q.id ? replyTarget.reaction : null} onCancelReply={() => setReplyTarget(null)} />}
               </div>
             </div>
           </div>

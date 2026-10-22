@@ -25,6 +25,8 @@ const askSchema = z
       .max(MAX_OPTIONS)
       .optional(),
     askerAnswer: z.string().trim().min(1).max(MAX_TEXT_LENGTH),
+    draftId: z.string().min(1).max(64).optional(),
+    draftVersion: z.number().int().positive().optional(),
     parentQuestionId: z.string().min(1).max(64).optional(),
   })
   .superRefine((data, ctx) => {
@@ -107,6 +109,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
       }
 
+      if (parsed.data.draftId) {
+        const draft = await tx.questionDraft.findFirst({ where: { id: parsed.data.draftId, userId: session.userId, version: parsed.data.draftVersion ?? -1 } });
+        if (!draft) return NextResponse.json({ error: "Der Entwurf wurde inzwischen geändert oder entfernt. Bitte neu laden." }, { status: 409 });
+        await tx.questionDraft.delete({ where: { id: draft.id } });
+      }
       const question = await tx.question.create({
         data: {
           roomId: room.id,
