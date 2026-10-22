@@ -199,6 +199,40 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     } finally { await browser.close(); }
   });
 
+  await t.test("browser: multiline comments, emoji toggle and quoted reply work on mobile", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    try {
+      const a = await user(), b = await user(), r = await room(a, b);
+      const q = await db.question.create({ data: { roomId: r.id, askerId: b.id, type: "TEXT", text: "Kommentar-Test", askerAnswer: "Alt", status: "ANSWERED" } });
+      const original = await db.reaction.create({ data: { questionId: q.id, authorId: b.id, text: "Originalkommentar" } });
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await context.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const page = await context.newPage();
+      await page.goto(servers[0].origin + "/room/" + r.id);
+      await page.getByRole("button", { name: "Kommentare (1)", exact: false }).click();
+      await page.getByRole("button", { name: "Emoji auswählen", exact: true }).click();
+      await page.getByRole("button", { name: "Mit ❤️ reagieren", exact: true }).click();
+      await page.getByRole("button", { name: "❤️: 1 Reaktionen", exact: true }).waitFor();
+      await page.getByRole("button", { name: "❤️: 1 Reaktionen", exact: true }).click();
+      await page.getByRole("button", { name: "❤️: 1 Reaktionen", exact: true }).waitFor({ state: "detached" });
+      await page.getByRole("button", { name: "Antworten", exact: true }).click();
+      const input = page.getByRole("textbox", { name: "Kommentar schreiben" });
+      assert.equal(await input.evaluate((el) => el.tagName), "TEXTAREA");
+      assert.equal(await input.getAttribute("maxlength"), "800");
+      await input.fill("Erste Zeile");
+      await input.press("Enter");
+      await input.pressSequentially("Zweite Zeile");
+      assert.equal(await db.reaction.count({ where: { questionId: q.id } }), 1);
+      await page.getByRole("button", { name: "Senden", exact: true }).click();
+      await page.getByRole("link", { name: "Antwort an " + b.username }).waitFor();
+      const reply = await db.reaction.findFirst({ where: { questionId: q.id, authorId: a.id } });
+      assert.equal(reply.replyToId, original.id);
+      assert.equal(reply.text, "Erste Zeile\\nZweite Zeile");
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    } finally { await browser.close(); }
+  });
+
   await t.test("admin setup creates exactly one admin under concurrent registration", async () => {
     const results = await Promise.all(Array.from({ length: 5 }, (_, i) =>
       request("/api/auth/register", { data: { username: "setup_user_" + i, password, code: setupCode } })

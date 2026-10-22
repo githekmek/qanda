@@ -98,6 +98,7 @@ function ReactionComposer({
         <GrowingTextarea
           id={`comment-input-${questionId}`}
           value={text}
+          disabled={loading}
           maxLength={MAX_REACTION_LENGTH}
           onChange={(e) => setText(e.target.value)}
           placeholder="Etwas dazu sagen…"
