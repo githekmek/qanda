@@ -25,7 +25,7 @@ export default function ReactionComment({ reaction, isNew, expanded, meId, onSee
     try {
       const res = await fetch(`/api/rooms/${roomId}/reaction-emoji`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reactionId: reaction.id, emoji, active: !reaction.emojis.some((item) => item.emoji === emoji && item.mine) }) });
       if (!res.ok) { const data = await res.json(); throw new Error(data.error ?? "Reaktion konnte nicht gespeichert werden."); }
-      setPicker(false); onChanged();
+      setPicker(false); await onChanged();
     } catch (error) { setError(error instanceof Error ? error.message : "Verbindung fehlgeschlagen."); }
     finally { setBusy(false); }
   }

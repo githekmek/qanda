@@ -148,7 +148,7 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     const other = await db.question.create({ data: { roomId: r.id, askerId: a.id, type: "TEXT", text: "Andere", askerAnswer: "A", status: "ANSWERED" } });
     const path = "/api/rooms/" + r.id + "/reaction";
     assert.equal((await request(path, { actor: a, data: { questionId: q.id, text: "x".repeat(801) } })).status, 400);
-    const comment = await request(path, { actor: a, data: { questionId: q.id, text: "x".repeat(798) + "\\nz" } });
+    const comment = await request(path, { actor: a, data: { questionId: q.id, text: "x".repeat(798) + "\nz" } });
     assert.equal(comment.status, 200);
     const original = comment.body.reactions[0];
     assert.equal((await request(path, { actor: b, data: { questionId: other.id, text: "Falsches Zitat", replyToId: original.id } })).status, 400);
@@ -228,7 +228,7 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await page.getByRole("link", { name: "Antwort an " + b.username }).waitFor();
       const reply = await db.reaction.findFirst({ where: { questionId: q.id, authorId: a.id } });
       assert.equal(reply.replyToId, original.id);
-      assert.equal(reply.text, "Erste Zeile\\nZweite Zeile");
+      assert.equal(reply.text, "Erste Zeile\nZweite Zeile");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     } finally { await browser.close(); }
   });
