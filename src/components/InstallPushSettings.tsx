@@ -57,6 +57,8 @@ export default function InstallPushSettings() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // Browser-only state is initialized after hydration to keep the server render stable.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsInstalled(installed());
     setIos(isIos());
     setInstallPrompt(window.__qandaInstallPrompt ?? null);
