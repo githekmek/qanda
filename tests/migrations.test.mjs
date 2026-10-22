@@ -92,7 +92,9 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
           ? { id: true, username: true, passwordHash: true, isAdmin: true, createdAt: true }
           : model === "question"
             ? { id: true, type: true, text: true, options: true, askerAnswer: true, status: true, createdAt: true, roomId: true, askerId: true }
-            : undefined;
+            : model === "reaction"
+              ? { id: true, text: true, createdAt: true, questionId: true, authorId: true }
+              : undefined;
         result[model] = await db[model].findMany({ orderBy: { id: "asc" }, ...(select ? { select } : {}) });
       }
       result.visits = await db.roomReactionVisit.findMany({ orderBy: { userId: "asc" } });
@@ -129,9 +131,21 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     assert.equal(await db.roomReactionVisit.count(), 1);
     assert.equal(await db.reactionRead.count(), 1);
 
+    // Drafts, comment emojis and replies start empty; existing comments answer nobody.
+    assert.equal((await db.reaction.findUnique({ where: { id: reaction.id } })).replyToId, null);
+    assert.equal(await db.reactionEmoji.count(), 0);
+    assert.equal(await db.questionDraft.count(), 0);
+    const reply = await db.reaction.create({ data: {
+      questionId: question.id, authorId: b.id, text: "Antwort mit Zitat", replyToId: reaction.id,
+    } });
+    await db.reactionEmoji.create({ data: { reactionId: reaction.id, userId: b.id, emoji: "👍" } });
+    await db.questionDraft.create({ data: { roomId: room.id, userId: a.id, type: "TEXT", text: "Entwurf" } });
+
     succeeded(command(["scripts/migrate-deploy.mjs"], ctx.url));
     assert.equal(await db.reactionRead.count(), 1);
-    assert.deepEqual((await snapshot()).reaction, before.reaction);
+    assert.deepEqual((await snapshot()).reaction.filter((r) => r.id !== reply.id), before.reaction);
+    assert.equal(await db.reactionEmoji.count(), 1);
+    assert.equal(await db.questionDraft.count(), 1);
   } finally { await ctx.close(); }
 });
 

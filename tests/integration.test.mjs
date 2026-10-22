@@ -387,6 +387,102 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.equal(chained.body.parentQuestion.id, created.body.id);
   });
 
+  await t.test("question drafts are private per room, survive turns and disappear when sent", async () => {
+    const a = await user(), b = await user(), outsider = await user();
+    const r = await room(a, b, { currentAskerId: b.id }), other = await room(a, outsider);
+    const path = "/api/rooms/" + r.id + "/drafts";
+    const draft = { type: "MULTIPLE_CHOICE", text: "Berge oder Meer?", options: ["Berge", ""], askerAnswer: "" };
+
+    assert.equal((await request(path, { data: draft })).status, 401);
+    assert.equal((await request(path, { actor: outsider, data: draft })).status, 404);
+    assert.equal((await request(path, { actor: a, data: { ...draft, text: "  " } })).status, 400);
+    assert.equal((await request(path, { actor: a, data: { ...draft, roomId: other.id } })).status, 400,
+      "unknown fields are rejected instead of silently ignored");
+    // Saving works while the opponent is on turn and options may still be incomplete.
+    const created = await request(path, { actor: a, data: draft });
+    assert.equal(created.status, 200);
+    assert.deepEqual(created.body.options, ["Berge", ""]);
+    assert.equal((await request("/api/rooms/" + other.id + "/drafts", { actor: a, method: "GET" })).body.length, 0);
+    assert.equal((await request(path, { actor: b, method: "GET" })).body.length, 0, "the opponent never sees drafts");
+
+    const draftPath = path + "/" + created.body.id;
+    assert.equal((await request(draftPath, { actor: b, method: "PATCH", data: draft })).status, 404);
+    assert.equal((await request(draftPath, { actor: b, method: "DELETE" })).status, 404);
+    const updated = await request(draftPath, { actor: a, method: "PATCH", data: {
+      ...draft, options: ["Berge", "Meer"], askerAnswer: "1",
+    } });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.body.askerAnswer, "1");
+    assert.equal((await request(path, { actor: a, method: "GET" })).body.length, 1);
+
+    const ask = { type: "MULTIPLE_CHOICE", text: "Berge oder Meer?", options: ["Berge", "Meer"], askerAnswer: "1", draftId: created.body.id };
+    assert.equal((await request("/api/rooms/" + r.id + "/ask", { actor: a, data: ask })).status, 403);
+    assert.equal(await db.questionDraft.count({ where: { id: created.body.id } }), 1, "a refused question keeps its draft");
+    await db.room.update({ where: { id: r.id }, data: { currentAskerId: a.id } });
+    const sent = await request("/api/rooms/" + r.id + "/ask", { actor: a, data: ask });
+    assert.equal(sent.status, 200);
+    assert.equal(await db.questionDraft.count({ where: { id: created.body.id } }), 0);
+
+    const kept = await request(path, { actor: a, data: { type: "TEXT", text: "Später", askerAnswer: "" } });
+    assert.equal((await request(path + "/" + kept.body.id, { actor: a, method: "DELETE" })).status, 200);
+    assert.equal((await request(path + "/" + kept.body.id, { actor: a, method: "DELETE" })).status, 404);
+  });
+
+  await t.test("comments allow 800 characters, quoted replies and one toggle per emoji and person", async () => {
+    const a = await user(), b = await user(), outsider = await user(), r = await room(a, b);
+    const q = await db.question.create({ data: {
+      roomId: r.id, askerId: a.id, type: "TEXT", text: "Wie war der Urlaub?", askerAnswer: "Schön",
+      status: "ANSWERED", answer: { create: { responderId: b.id, value: "Toll" } },
+    } });
+    const otherQ = await db.question.create({ data: {
+      roomId: r.id, askerId: b.id, type: "TEXT", text: "Andere Frage", askerAnswer: "A", status: "ANSWERED",
+    } });
+    const legacy = await db.reaction.create({ data: { questionId: q.id, authorId: b.id, text: "Bestehender Kommentar" } });
+    const comment = "Zeile eins\nZeile zwei " + "x".repeat(778); // exactly 800 characters
+    const path = "/api/rooms/" + r.id;
+
+    assert.equal((await request(path + "/reaction", { actor: a, data: { questionId: q.id, text: "y".repeat(801) } })).status, 400);
+    const long = await request(path + "/reaction", { actor: a, data: { questionId: q.id, text: comment } });
+    assert.equal(long.status, 200);
+    const stored = long.body.reactions.find((c) => c.text === comment);
+    assert.ok(stored, "line breaks and 800 characters are kept");
+    assert.equal(stored.replyTo, null);
+    assert.equal(long.body.reactions.find((c) => c.id === legacy.id).replyTo, null);
+
+    const otherComment = await db.reaction.create({ data: { questionId: otherQ.id, authorId: a.id, text: "Woanders" } });
+    assert.equal((await request(path + "/reaction", { actor: b, data: { questionId: q.id, text: "Hm", replyToId: otherComment.id } })).status, 400,
+      "a reply can only quote a comment on the same question");
+    const reply = await request(path + "/reaction", { actor: b, data: { questionId: q.id, text: "Erzähl mehr", replyToId: stored.id } });
+    assert.equal(reply.status, 200);
+    const quoted = reply.body.reactions.at(-1);
+    assert.equal(quoted.replyTo.id, stored.id);
+    assert.equal(quoted.replyTo.author.id, a.id);
+    assert.ok(quoted.replyTo.text.length <= 161, "quotes repeat only the start of long comments");
+
+    const emoji = (actor, data) => request(path + "/reaction-emoji", { actor, data });
+    assert.equal((await emoji(undefined, { reactionId: legacy.id, emoji: "👍", active: true })).status, 401);
+    assert.equal((await emoji(outsider, { reactionId: legacy.id, emoji: "👍", active: true })).status, 404);
+    assert.equal((await emoji(a, { reactionId: legacy.id, emoji: "🦄", active: true })).status, 400);
+    assert.equal((await emoji(a, { reactionId: otherComment.id + "x", emoji: "👍", active: true })).status, 404);
+    await emoji(a, { reactionId: legacy.id, emoji: "👍", active: true });
+    await emoji(a, { reactionId: legacy.id, emoji: "👍", active: true });
+    await emoji(a, { reactionId: legacy.id, emoji: "😂", active: true });
+    const both = await emoji(b, { reactionId: legacy.id, emoji: "👍", active: true });
+    assert.equal(both.status, 200);
+    assert.deepEqual(both.body.reactions.find((c) => c.id === legacy.id).emojis, [
+      { emoji: "👍", count: 2, mine: true }, { emoji: "😂", count: 1, mine: false },
+    ]);
+    const removed = await emoji(a, { reactionId: legacy.id, emoji: "😂", active: false });
+    assert.deepEqual(removed.body.reactions.find((c) => c.id === legacy.id).emojis, [{ emoji: "👍", count: 2, mine: true }]);
+    assert.equal((await db.reaction.findUnique({ where: { id: legacy.id } })).text, "Bestehender Kommentar");
+
+    await db.room.update({ where: { id: r.id }, data: { archivedAt: new Date() } });
+    assert.equal((await emoji(a, { reactionId: legacy.id, emoji: "🔥", active: true })).status, 409);
+    const state = await request(path + "/state", { actor: b, method: "GET" });
+    const archived = state.body.history.find((item) => item.id === q.id);
+    assert.deepEqual(archived.reactions.find((c) => c.id === legacy.id).emojis, [{ emoji: "👍", count: 2, mine: true }]);
+  });
+
   await t.test("push subscriptions are private, device-specific and opt in", async () => {
     const a = await user(), b = await user();
     const endpoint = "https://push.example.test/subscription/" + randomBytes(12).toString("hex");
@@ -1068,7 +1164,7 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
         assert.equal(await page.getByRole("switch", { name: label }).getAttribute("aria-checked"), "false");
       }
       await mkdir("test-results", { recursive: true });
-      for (const [name, theme] of [["Bunt", "colorful"], ["Dark", "dark"], ["Standard", "standard"]]) {
+      for (const [name, theme] of [["Bunt", "colorful"], ["Dark", "dark"], ["System", "standard"]]) {
         const saved = page.waitForResponse(res => res.url().endsWith("/api/profile") && res.request().method() === "PATCH");
         await page.getByRole("button", { name, exact: false }).filter({ hasText: name }).click();
         assert.equal((await saved).status(), 200);

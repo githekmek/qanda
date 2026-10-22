@@ -26,6 +26,8 @@ const askSchema = z
       .optional(),
     askerAnswer: z.string().trim().min(1).max(MAX_TEXT_LENGTH),
     parentQuestionId: z.string().min(1).max(64).optional(),
+    // A sent draft is removed in the same transaction that creates the question.
+    draftId: z.string().min(1).max(64).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.type !== "TEXT") {
@@ -92,7 +94,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Du bist nicht am Zug" }, { status: 403 });
       }
 
-      const { type, text, options, askerAnswer, parentQuestionId } = parsed.data;
+      const { type, text, options, askerAnswer, parentQuestionId, draftId } = parsed.data;
 
       if (parentQuestionId) {
         const parent = await tx.question.findUnique({
@@ -120,6 +122,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           parentQuestionId: parentQuestionId ?? null,
         },
       });
+
+      if (draftId) {
+        await tx.questionDraft.deleteMany({ where: { id: draftId, roomId: room.id, userId: session.userId } });
+      }
 
       await enqueueNotification(tx, room.playerAId === session.userId ? room.playerBId : room.playerAId, room.id, "turn", question.id);
       const withRelations = await loadQuestionWithRelations(question.id, tx);

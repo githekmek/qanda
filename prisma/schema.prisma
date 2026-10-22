@@ -43,6 +43,8 @@ model User {
   redeemedCode      AccessCode?  @relation("CodeRedeemer")
   reactionVisits    RoomReactionVisit[]
   reactionReads     ReactionRead[]
+  questionDrafts    QuestionDraft[]
+  reactionEmojis    ReactionEmoji[]
 }
 
 // Single-use registration code handed out by the admin.
@@ -81,6 +83,7 @@ model Room {
   notifications Notification[]
   questions Question[]
   reactionVisits RoomReactionVisit[]
+  questionDrafts QuestionDraft[]
 }
 
 model Question {
@@ -130,8 +133,45 @@ model Reaction {
   authorId String
   author   User   @relation("ReactionAuthor", fields: [authorId], references: [id])
   reads ReactionRead[]
+  emojis ReactionEmoji[]
+
+  // The comment this one answers; shown as a quote above the text.
+  replyToId String?
+  replyTo   Reaction?  @relation("ReactionReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Reaction[] @relation("ReactionReply")
 
   @@index([questionId, createdAt])
+}
+
+// One emoji per person and comment can be toggled on or off.
+model ReactionEmoji {
+  reactionId String
+  userId     String
+  emoji      String
+  createdAt  DateTime @default(now())
+  reaction Reaction @relation(fields: [reactionId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([reactionId, userId, emoji])
+  @@index([userId])
+}
+
+// A question prepared ahead of time; only visible to its author in this room.
+model QuestionDraft {
+  id          String       @id @default(cuid())
+  type        QuestionType
+  text        String
+  options     String? // JSON-encoded array, may contain empty options while drafting
+  askerAnswer String  @default("") // may be incomplete while drafting
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, userId, updatedAt])
+  @@index([userId])
 }
 
 model LoginRateLimit {

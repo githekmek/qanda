@@ -22,6 +22,9 @@ export type PublicQuestion = {
     text: string;
     createdAt: string;
     author: { id: string; username: string };
+    // Null when the comment answers nobody, or when the quoted comment is gone.
+    replyTo: { id: string; text: string; author: { id: string; username: string } } | null;
+    emojis: { emoji: string; count: number; mine: boolean }[];
   }[];
 };
 
@@ -34,6 +37,15 @@ export type RoomStateResponse = {
   awaitingMyAnswer: boolean;
   pendingQuestion: PublicQuestion | null;
   history: PublicQuestion[];
+};
+
+export type QuestionDraft = {
+  id: string;
+  type: QuestionType;
+  text: string;
+  options: string[] | null;
+  askerAnswer: string;
+  updatedAt: string;
 };
 
 export type RoomSummary = {

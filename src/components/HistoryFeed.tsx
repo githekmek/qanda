@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { answerLabels, matchingAnswerPositions } from "@/lib/choiceAnswers.mjs";
 import ReactionComment from "./ReactionComment";
 import type { PublicQuestion } from "@/types/game";
 
-const MAX_REACTION_LENGTH = 500;
+const MAX_REACTION_LENGTH = 800;
+
+type Comment = PublicQuestion["reactions"][number];
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleString("de-DE", {
@@ -45,15 +47,32 @@ function AnswerRow({
 function ReactionComposer({
   roomId,
   questionId,
+  replyTo,
+  onCancelReply,
   onSubmitted,
 }: {
   roomId: string;
   questionId: string;
+  replyTo: Comment | null;
+  onCancelReply: () => void;
   onSubmitted: () => void;
 }) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const field = useRef<HTMLTextAreaElement>(null);
+
+  // Grow with the text so longer comments stay readable while editing.
+  useLayoutEffect(() => {
+    const node = field.current;
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${node.scrollHeight}px`;
+  }, [text]);
+
+  useEffect(() => {
+    if (replyTo) field.current?.focus();
+  }, [replyTo]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -65,7 +84,7 @@ function ReactionComposer({
       const res = await fetch(`/api/rooms/${roomId}/reaction`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId, text: text.trim() }),
+        body: JSON.stringify({ questionId, text: text.trim(), replyToId: replyTo?.id }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -73,6 +92,7 @@ function ReactionComposer({
         return;
       }
       setText("");
+      onCancelReply();
       onSubmitted();
     } catch {
       setError("Verbindung zum Server fehlgeschlagen");
@@ -83,16 +103,29 @@ function ReactionComposer({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={text}
-          maxLength={MAX_REACTION_LENGTH}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Etwas dazu sagen…"
-          aria-label="Kommentar schreiben"
-          className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-800"
-        />
+      {replyTo && (
+        <div className="flex items-start justify-between gap-2 rounded-md bg-zinc-50 px-2 py-1 text-xs text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+          <span className="min-w-0 break-words">
+            Antwort auf <span className="font-medium">{replyTo.author.username}</span>: „{replyTo.text.length > 80 ? replyTo.text.slice(0, 80).trimEnd() + "…" : replyTo.text}“
+          </span>
+          <button type="button" onClick={onCancelReply} aria-label="Antwort abbrechen"
+            className="shrink-0 px-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">
+            ✕
+          </button>
+        </div>
+      )}
+      <textarea
+        ref={field}
+        rows={2}
+        value={text}
+        maxLength={MAX_REACTION_LENGTH}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Etwas dazu sagen…"
+        aria-label={replyTo ? `Antwort an ${replyTo.author.username} schreiben` : "Kommentar schreiben"}
+        className="max-h-80 min-w-0 resize-none overflow-y-auto rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-800"
+      />
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-zinc-400">{text.length}/{MAX_REACTION_LENGTH}</span>
         <button
           type="submit"
           disabled={loading || !text.trim()}
@@ -133,6 +166,7 @@ export default function HistoryFeed({
   canAskFollowUp: boolean;
   onFollowUp: (question: { id: string; text: string }) => void;
 }) {
+  const [replyTargets, setReplyTargets] = useState<Record<string, Comment | null>>({});
   useEffect(() => {
     if (!jump) return;
     const element = document.getElementById(`reaction-${jump.id}`);
@@ -214,11 +248,18 @@ export default function HistoryFeed({
             <div id={`comments-${q.id}`} hidden={!open}>
               <div className="flex flex-col gap-2">
                 {q.reactions.map((reaction) => (
-                  <ReactionComment key={reaction.id} reaction={reaction}
+                  <ReactionComment key={reaction.id} roomId={roomId} reaction={reaction}
                     isNew={Boolean(highlighted[reaction.id]) && reaction.author.id !== meId}
-                    expanded={open} meId={meId} onSeen={onSeen} />
+                    expanded={open} meId={meId} readOnly={readOnly} onSeen={onSeen}
+                    onReply={(target) => setReplyTargets((previous) => ({ ...previous, [q.id]: target }))}
+                    onChanged={onReacted} />
                 ))}
-                {!readOnly && <ReactionComposer roomId={roomId} questionId={q.id} onSubmitted={onReacted} />}
+                {!readOnly && (
+                  <ReactionComposer roomId={roomId} questionId={q.id}
+                    replyTo={replyTargets[q.id] ?? null}
+                    onCancelReply={() => setReplyTargets((previous) => ({ ...previous, [q.id]: null }))}
+                    onSubmitted={onReacted} />
+                )}
               </div>
             </div>
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { QuestionType } from "@/types/game";
+import { useEffect, useRef, useState } from "react";
+import type { QuestionDraft, QuestionType } from "@/types/game";
 import {
   CATEGORIES,
   CATEGORY_LABELS,
@@ -34,18 +34,39 @@ const INACTIVE_CHIP =
   "border-zinc-300 bg-white text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:bg-transparent dark:text-zinc-400";
 const INACTIVE_BOX = "border-zinc-400 bg-white dark:border-zinc-500 dark:bg-transparent";
 
+/** Reads a draft's possibly incomplete own answer back into the form's selection state. */
+function draftSelection(draft: QuestionDraft) {
+  const count = draft.options?.length ?? 0;
+  if (draft.type === "MULTIPLE_SELECT") {
+    try {
+      const parsed: unknown = JSON.parse(draft.askerAnswer || "[]");
+      return Array.isArray(parsed)
+        ? parsed.filter((i): i is number => Number.isInteger(i) && i >= 0 && i < count)
+        : [];
+    } catch { return []; }
+  }
+  if (draft.type === "MULTIPLE_CHOICE" && draft.askerAnswer !== "") {
+    const index = Number(draft.askerAnswer);
+    return Number.isInteger(index) && index >= 0 && index < count ? [index] : [];
+  }
+  return [];
+}
+
 export default function AskForm({
   roomId,
   onSubmitted,
   askedQuestions,
   followUpTo,
   onCancelFollowUp,
+  canSend = true,
 }: {
   roomId: string;
   onSubmitted: () => void;
   askedQuestions: string[];
   followUpTo?: { id: string; text: string } | null;
   onCancelFollowUp?: () => void;
+  // False while the opponent is on turn: questions can only be prepared as drafts.
+  canSend?: boolean;
 }) {
   const [type, setType] = useState<QuestionType>("TEXT");
   const [categories, setCategories] = useState<QuestionCategory[]>([...CATEGORIES]);
@@ -57,7 +78,96 @@ export default function AskForm({
   const [freeTextAnswer, setFreeTextAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [draftStatus, setDraftStatus] = useState<string | null>(null);
   const questionFieldRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/rooms/${roomId}/drafts`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list: QuestionDraft[]) => { if (!cancelled) setDrafts(list); })
+      .catch(() => { /* Drafts are optional; the form stays usable without them. */ });
+    return () => { cancelled = true; };
+  }, [roomId]);
+
+  function resetForm() {
+    setText("");
+    setOptions(["", ""]);
+    setSelectedOption(null);
+    setSelectedOptions([]);
+    setFreeTextAnswer("");
+    setDraftId(null);
+  }
+
+  function loadDraft(draft: QuestionDraft) {
+    const selection = draftSelection(draft);
+    setType(draft.type === "TEXT" ? "TEXT" : "MULTIPLE_CHOICE");
+    setMultiple(draft.type === "MULTIPLE_SELECT");
+    setText(draft.text);
+    const loaded = draft.options ?? [];
+    setOptions(loaded.length >= MIN_OPTIONS ? loaded : [...loaded, ...Array(MIN_OPTIONS - loaded.length).fill("")]);
+    setSelectedOptions(draft.type === "MULTIPLE_SELECT" ? selection : []);
+    setSelectedOption(draft.type === "MULTIPLE_CHOICE" ? selection[0] ?? null : null);
+    setFreeTextAnswer(draft.type === "TEXT" ? draft.askerAnswer : "");
+    setDraftId(draft.id);
+    setDraftsOpen(false);
+    setError(null);
+    setDraftStatus(null);
+    questionFieldRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    questionFieldRef.current?.focus();
+  }
+
+  async function saveDraft() {
+    setError(null);
+    setDraftStatus(null);
+    if (!text.trim()) {
+      setError("Bitte zuerst eine Frage eingeben");
+      return;
+    }
+    const draftType = type === "MULTIPLE_CHOICE" && multiple ? "MULTIPLE_SELECT" : type;
+    const payload = {
+      type: draftType,
+      text: text.trim(),
+      options: type === "MULTIPLE_CHOICE" ? options.map((o) => o.trim()) : undefined,
+      askerAnswer: draftType === "TEXT" ? freeTextAnswer.trim()
+        : draftType === "MULTIPLE_SELECT" ? (selectedOptions.length ? JSON.stringify([...selectedOptions].sort((a, b) => a - b)) : "")
+        : selectedOption === null ? "" : String(selectedOption),
+    };
+    setLoading(true);
+    try {
+      const res = await fetch(draftId ? `/api/rooms/${roomId}/drafts/${draftId}` : `/api/rooms/${roomId}/drafts`, {
+        method: draftId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Entwurf konnte nicht gespeichert werden");
+        return;
+      }
+      const saved = data as QuestionDraft;
+      setDrafts((previous) => [saved, ...previous.filter((d) => d.id !== saved.id)]);
+      setDraftId(saved.id);
+      setDraftStatus("Entwurf gespeichert");
+    } catch {
+      setError("Verbindung zum Server fehlgeschlagen");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteDraft(id: string) {
+    const res = await fetch(`/api/rooms/${roomId}/drafts/${id}`, { method: "DELETE" }).catch(() => null);
+    if (!res || (!res.ok && res.status !== 404)) {
+      setError("Entwurf konnte nicht gelöscht werden");
+      return;
+    }
+    setDrafts((previous) => previous.filter((d) => d.id !== id));
+    if (id === draftId) setDraftId(null);
+  }
 
   function toggleCategory(category: QuestionCategory) {
     setCategories((prev) =>
@@ -93,6 +203,7 @@ export default function AskForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!canSend) return;
 
     if (!text.trim()) {
       setError("Bitte eine Frage eingeben");
@@ -131,6 +242,7 @@ export default function AskForm({
           options: type === "MULTIPLE_CHOICE" ? trimmedOptions : undefined,
           askerAnswer,
           parentQuestionId: followUpTo?.id,
+          draftId: draftId ?? undefined,
         }),
       });
       const data = await res.json();
@@ -138,11 +250,8 @@ export default function AskForm({
         setError(data.error ?? "Etwas ist schiefgelaufen");
         return;
       }
-      setText("");
-      setOptions(["", ""]);
-      setSelectedOption(null);
-      setSelectedOptions([]);
-      setFreeTextAnswer("");
+      if (draftId) setDrafts((previous) => previous.filter((d) => d.id !== draftId));
+      resetForm();
       onSubmitted();
     } catch {
       setError("Verbindung zum Server fehlgeschlagen");
@@ -160,7 +269,7 @@ export default function AskForm({
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">
-            {followUpTo ? "Du bist dran: Stelle eine Folgefrage" : "Du bist dran: Stelle eine Frage"}
+            {!canSend ? "Frage vorbereiten" : followUpTo ? "Du bist dran: Stelle eine Folgefrage" : "Du bist dran: Stelle eine Frage"}
           </h2>
           {followUpTo && onCancelFollowUp && (
             <button type="button" onClick={onCancelFollowUp}
@@ -174,7 +283,40 @@ export default function AskForm({
             Folgefrage zu: <span className="font-medium">{followUpTo.text}</span>
           </p>
         )}
+        {!canSend && (
+          <p className="text-sm text-zinc-500">Speichere Fragen als Entwurf und stelle sie, sobald du am Zug bist.</p>
+        )}
       </div>
+
+      {drafts.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <button type="button" aria-expanded={draftsOpen} aria-controls="question-drafts"
+            onClick={() => setDraftsOpen(!draftsOpen)}
+            className="flex min-h-10 items-center gap-2 self-start rounded-lg px-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900">
+            <span aria-hidden="true">{draftsOpen ? "▾" : "▸"}</span>
+            Meine Entwürfe ({drafts.length})
+          </button>
+          <ul id="question-drafts" hidden={!draftsOpen} className="flex flex-col gap-1.5">
+            {drafts.map((draft) => (
+              <li key={draft.id}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${draft.id === draftId
+                  ? "border-zinc-500 dark:border-zinc-400"
+                  : "border-zinc-200 dark:border-zinc-800"}`}>
+                <span className="min-w-0 flex-1 truncate">{draft.text}</span>
+                <button type="button" onClick={() => loadDraft(draft)}
+                  className="shrink-0 rounded px-2 py-1 font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                  {draft.id === draftId ? "Geladen" : "Laden"}
+                </button>
+                <button type="button" onClick={() => deleteDraft(draft.id)}
+                  aria-label={`Entwurf „${draft.text}“ löschen`}
+                  className="shrink-0 rounded px-2 py-1 text-zinc-400 hover:text-red-600">
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
         <button
@@ -362,14 +504,33 @@ export default function AskForm({
       </fieldset>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {draftStatus && <p role="status" className="text-sm text-green-700 dark:text-green-400">{draftStatus}</p>}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="rounded-lg bg-zinc-900 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
-      >
-        {loading ? "Wird gesendet…" : followUpTo ? "Folgefrage stellen" : "Frage stellen"}
-      </button>
+      <div className={`grid gap-2 ${canSend ? "grid-cols-2" : "grid-cols-1"}`}>
+        <button
+          type="button"
+          onClick={saveDraft}
+          disabled={loading}
+          className="rounded-lg border border-zinc-300 py-2 text-sm font-semibold text-zinc-700 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900"
+        >
+          {draftId ? "Entwurf aktualisieren" : "Als Entwurf speichern"}
+        </button>
+        {canSend && (
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-lg bg-zinc-900 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          >
+            {loading ? "Wird gesendet…" : followUpTo ? "Folgefrage stellen" : "Frage stellen"}
+          </button>
+        )}
+      </div>
+      {draftId && (
+        <button type="button" onClick={() => { resetForm(); setDraftStatus(null); }}
+          className="self-center text-xs text-zinc-500 underline hover:text-zinc-800 dark:hover:text-zinc-200">
+          Neue Frage beginnen (Entwurf bleibt gespeichert)
+        </button>
+      )}
     </form>
   );
 }

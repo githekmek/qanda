@@ -4,7 +4,9 @@ import { prisma } from "@/lib/db";
 
 export { MAX_OPTIONS, MIN_OPTIONS } from "@/lib/questionLimits";
 export const MAX_TEXT_LENGTH = 255;
-export const MAX_REACTION_LENGTH = 500;
+export const MAX_REACTION_LENGTH = 800;
+// Quotes repeat the start of the answered comment, not all of it.
+export const MAX_QUOTE_LENGTH = 160;
 
 export type PublicQuestion = {
   id: string;
@@ -29,6 +31,9 @@ export type PublicQuestion = {
     text: string;
     createdAt: string;
     author: { id: string; username: string };
+    // Null when the comment answers nobody, or when the quoted comment is gone.
+    replyTo: { id: string; text: string; author: { id: string; username: string } } | null;
+    emojis: { emoji: string; count: number; mine: boolean }[];
   }[];
 };
 
@@ -37,7 +42,14 @@ type QuestionWithRelations = NonNullable<Awaited<ReturnType<typeof loadQuestionW
 export const questionInclude = {
   asker: true,
   answer: { include: { responder: true } },
-  reactions: { include: { author: true }, orderBy: { createdAt: "asc" } },
+  reactions: {
+    include: {
+      author: true,
+      replyTo: { include: { author: true } },
+      emojis: { orderBy: { createdAt: "asc" } },
+    },
+    orderBy: { createdAt: "asc" },
+  },
   parentQuestion: { select: { id: true, text: true } },
   followUp: { select: { id: true } },
 } as const;
@@ -54,6 +66,22 @@ export async function findPendingQuestion(roomId: string) {
     where: { roomId, status: "PENDING" },
     include: questionInclude,
   });
+}
+
+function quote(text: string) {
+  return text.length > MAX_QUOTE_LENGTH ? text.slice(0, MAX_QUOTE_LENGTH).trimEnd() + "…" : text;
+}
+
+/** Groups emoji toggles by emoji, in the order each emoji was first used. */
+function summarizeEmojis(emojis: { emoji: string; userId: string }[], viewerId: string) {
+  const groups = new Map<string, { emoji: string; count: number; mine: boolean }>();
+  for (const { emoji, userId } of emojis) {
+    const group = groups.get(emoji) ?? { emoji, count: 0, mine: false };
+    group.count++;
+    if (userId === viewerId) group.mine = true;
+    groups.set(emoji, group);
+  }
+  return [...groups.values()];
 }
 
 /**
@@ -79,6 +107,12 @@ export function serializeQuestionForViewer(
       text: reaction.text,
       createdAt: reaction.createdAt.toISOString(),
       author: { id: reaction.author.id, username: reaction.author.username },
+      replyTo: reaction.replyTo ? {
+        id: reaction.replyTo.id,
+        text: quote(reaction.replyTo.text),
+        author: { id: reaction.replyTo.author.id, username: reaction.replyTo.author.username },
+      } : null,
+      emojis: summarizeEmojis(reaction.emojis, viewerId),
     })),
   };
 

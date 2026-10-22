@@ -258,14 +258,34 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
               ]}
             />
           ) : state.room.archived ? null : (
-            <div className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700">
-              <p className="font-medium">Warte auf {state.opponent.username}</p>
-              <p className="mt-1 text-sm text-zinc-500">
-                {state.pendingQuestion
-                  ? "Deine Frage wartet noch auf eine Antwort."
-                  : `${state.opponent.username} ist am Zug und stellt gleich eine Frage.`}
-              </p>
-            </div>
+            <>
+              <div className="rounded-2xl border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700">
+                <p className="font-medium">Warte auf {state.opponent.username}</p>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {state.pendingQuestion
+                    ? "Deine Frage wartet noch auf eine Antwort."
+                    : `${state.opponent.username} ist am Zug und stellt gleich eine Frage.`}
+                </p>
+              </div>
+              <details className="group rounded-2xl">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg px-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900">
+                  <span aria-hidden="true" className="group-open:hidden">▸</span>
+                  <span aria-hidden="true" className="hidden group-open:inline">▾</span>
+                  Frage für später vorbereiten
+                </summary>
+                <div className="mt-2">
+                  <AskForm
+                    roomId={roomId}
+                    canSend={false}
+                    onSubmitted={refresh}
+                    askedQuestions={[
+                      ...state.history.map((q) => q.text),
+                      ...(state.pendingQuestion ? [state.pendingQuestion.text] : []),
+                    ]}
+                  />
+                </div>
+              </details>
+            </>
           )}
 
           <section className="flex flex-col gap-3">

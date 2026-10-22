@@ -15,6 +15,7 @@ export const maxDuration = 60;
 const reactionSchema = z.object({
   questionId: z.string().min(1),
   text: z.string().trim().min(1).max(MAX_REACTION_LENGTH),
+  replyToId: z.string().min(1).max(64).optional(),
 });
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -40,7 +41,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Dieser Raum ist archiviert" }, { status: 409 });
       }
 
-      const { questionId, text } = parsed.data;
+      const { questionId, text, replyToId } = parsed.data;
 
       const question = await loadQuestionWithRelations(questionId, tx);
       if (!question || question.roomId !== room.id) {
@@ -53,8 +54,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         );
       }
 
+      if (replyToId && !question.reactions.some((r) => r.id === replyToId)) {
+        return NextResponse.json({ error: "Der zitierte Kommentar ist nicht verfügbar" }, { status: 400 });
+      }
+
       const reaction = await tx.reaction.create({
-        data: { questionId: question.id, authorId: session.userId, text },
+        data: { questionId: question.id, authorId: session.userId, text, replyToId: replyToId ?? null },
       });
 
       await enqueueNotification(tx, room.playerAId === session.userId ? room.playerBId : room.playerAId, room.id, "comment", reaction.id);

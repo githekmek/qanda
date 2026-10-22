@@ -1,5 +1,16 @@
 export const RELEASE_NOTES = [
   {
+    version: "2026.10.22",
+    date: "22. Oktober 2026",
+    title: "Entwürfe, Emojis und Antworten auf Kommentare",
+    items: [
+      "Fragen lassen sich als Entwurf speichern und später anpassen – auch wenn du gerade nicht am Zug bist.",
+      "Kommentare haben ein mitwachsendes Textfeld mit bis zu 800 Zeichen.",
+      "Auf Kommentare kannst du mit Emojis reagieren oder mit Zitat antworten.",
+      "Die Darstellung „Standard“ heißt jetzt „System“.",
+    ],
+  },
+  {
     version: "2026.10.21",
     date: "21. Oktober 2026",
     title: "App installieren, Push und Folgefragen",

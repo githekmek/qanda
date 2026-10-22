@@ -1,7 +1,7 @@
 name: Security regression
 on:
   push:
-    branches: [main, "codex/security-fixes-*"]
+    branches: [main, claudepreview, codexpreview, "codex/security-fixes-*"]
   pull_request:
     branches: [main]
 permissions:
