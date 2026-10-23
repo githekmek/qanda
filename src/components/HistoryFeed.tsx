@@ -125,6 +125,9 @@ function ReactionComposer({
         maxLength={MAX_REACTION_LENGTH}
         onChange={(e) => setText(e.target.value)}
         onFocus={fitToText}
+        spellCheck
+        autoCorrect="on"
+        enterKeyHint="enter"
         placeholder="Etwas dazu sagen…"
         aria-label={replyTo ? `Antwort an ${replyTo.author.username} schreiben` : "Kommentar schreiben"}
         className="max-h-80 min-w-0 resize-none overflow-y-auto rounded-lg border border-zinc-200 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-800"

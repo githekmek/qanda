@@ -369,6 +369,9 @@ export default function AskForm({
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={2}
+          spellCheck
+          autoCorrect="on"
+          enterKeyHint="enter"
           className="resize-none rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
         />
         <span className="text-right text-xs text-zinc-400">
@@ -400,6 +403,9 @@ export default function AskForm({
                 maxLength={100}
                 onChange={(e) => updateOption(index, e.target.value)}
                 placeholder={`Option ${index + 1}`}
+                spellCheck
+                autoCorrect="on"
+                enterKeyHint={canSend ? "send" : "done"}
                 aria-label={`Option ${index + 1}`}
                 className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
               />
@@ -437,6 +443,9 @@ export default function AskForm({
             maxLength={MAX_TEXT_LENGTH}
             value={freeTextAnswer}
             onChange={(e) => setFreeTextAnswer(e.target.value)}
+            spellCheck
+            autoCorrect="on"
+            enterKeyHint={canSend ? "send" : "done"}
             className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
           />
           <span className="text-right text-xs text-zinc-400">
