@@ -9,7 +9,14 @@ import AnswerForm from "./AnswerForm";
 import HistoryFeed from "./HistoryFeed";
 import InviteLink from "./InviteLink";
 
-const POLL_INTERVAL_MS = 5000;
+// Every poll wakes the database, which only scales to zero after a few quiet minutes.
+// Poll quickly while someone is playing, slow down when nothing happens and pause
+// entirely when nobody has touched the page for a while.
+const FAST_POLL_MS = 5000;
+const SLOW_POLL_MS = 30000;
+const SLOW_AFTER_MS = 2 * 60 * 1000;
+const PAUSE_AFTER_MS = 10 * 60 * 1000;
+const ACTIVITY_EVENTS = ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "scroll"] as const;
 
 export default function RoomClient(props: { roomId: string; origin: string }) {
   return <RoomContent key={props.roomId} {...props} />;
@@ -26,9 +33,12 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
   const [jump, setJump] = useState<{ id: string; sequence: number } | null>(null);
   const [readError, setReadError] = useState(false);
   const [followUpTarget, setFollowUpTarget] = useState<{ id: string; text: string } | null>(null);
+  const [pollingPaused, setPollingPaused] = useState(false);
   const initialized = useRef(false);
   const refreshing = useRef(false);
   const historySince = useRef<string | null>(null);
+  const lastSnapshot = useRef<string | null>(null);
+  const lastChangeAt = useRef(0);
   const pendingReads = useRef(new Set<string>());
   const savedReads = useRef(new Set<string>());
   const onSeen = useCallback((id: string) => {
@@ -89,7 +99,12 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
         return;
       }
       if (!res.ok) throw new Error("room state");
-      const next: RoomStateResponse = await res.json();
+      const text = await res.text();
+      if (text !== lastSnapshot.current) {
+        lastSnapshot.current = text;
+        lastChangeAt.current = Date.now();
+      }
+      const next: RoomStateResponse = JSON.parse(text);
       const oldest = next.history.at(-1)?.createdAt;
       if (oldest) historySince.current = oldest;
       setHighlighted((previous) => {
@@ -110,35 +125,59 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
   }, [roomId, router]);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let paused = false;
+    let lastActivityAt = Date.now();
 
-    const start = () => {
-      if (!interval) interval = setInterval(refresh, POLL_INTERVAL_MS);
+    const schedule = () => {
+      clearTimeout(timer);
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastActivityAt > PAUSE_AFTER_MS) {
+        paused = true;
+        setPollingPaused(true);
+        return;
+      }
+      const quietFor = now - Math.max(lastActivityAt, lastChangeAt.current);
+      timer = setTimeout(tick, quietFor > SLOW_AFTER_MS ? SLOW_POLL_MS : FAST_POLL_MS);
     };
-    const stop = () => {
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
+    const tick = async () => {
+      await refresh();
+      schedule();
+    };
+    const onActivity = () => {
+      const now = Date.now();
+      if (now - lastActivityAt < 1000 && !paused) return;
+      const wasSlow = now - Math.max(lastActivityAt, lastChangeAt.current) > SLOW_AFTER_MS;
+      lastActivityAt = now;
+      if (paused) {
+        paused = false;
+        setPollingPaused(false);
+        void tick();
+      } else if (wasSlow) {
+        schedule();
       }
     };
     // Polling only costs requests while somebody is actually looking at the room.
     const onVisibilityChange = () => {
       if (document.hidden) {
-        stop();
+        clearTimeout(timer);
       } else {
-        refresh();
-        start();
+        lastActivityAt = Date.now();
+        paused = false;
+        setPollingPaused(false);
+        void tick();
       }
     };
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    refresh();
-    start();
+    void tick();
     document.addEventListener("visibilitychange", onVisibilityChange);
+    for (const event of ACTIVITY_EVENTS) window.addEventListener(event, onActivity, { passive: true });
 
     return () => {
-      stop();
+      clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, onActivity);
     };
   }, [refresh]);
 
@@ -229,6 +268,11 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
             {jump ? "Nächsten anzeigen" : "Anzeigen"}
           </button>
         </div>
+      )}
+      {pollingPaused && (
+        <p role="status" className="text-sm text-zinc-500">
+          Automatische Aktualisierung pausiert. Sobald du die Seite wieder bedienst, geht es weiter.
+        </p>
       )}
       {readError && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Der Gelesen-Stand konnte noch nicht gespeichert werden. Wir versuchen es erneut.</p>}
 
