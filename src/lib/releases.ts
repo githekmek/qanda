@@ -1,5 +1,14 @@
 export const RELEASE_NOTES = [
   {
+    version: "2026.11.05",
+    date: "5. November 2026",
+    title: "Gedanke dazu",
+    items: [
+      "Beim Fragen und Antworten kannst du einen verdeckten Gedanken mit bis zu 500 Zeichen hinterlegen.",
+      "Er wird erst aufgedeckt, wenn beide geantwortet haben, und lässt sich danach nicht mehr ändern.",
+    ],
+  },
+  {
     version: "2026.10.22",
     date: "22. Oktober 2026",
     title: "Entwürfe, Emojis und Antworten auf Kommentare",

@@ -10,6 +10,7 @@ import {
 } from "@/lib/questionCatalog";
 
 import { MAX_OPTIONS, MIN_OPTIONS } from "@/lib/questionLimits";
+import NoteField from "./NoteField";
 const MAX_TEXT_LENGTH = 255;
 
 // Only the selected state carries colour; unselected stays grey, so the two are
@@ -76,6 +77,7 @@ export default function AskForm({
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [freeTextAnswer, setFreeTextAnswer] = useState("");
+  const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [drafts, setDrafts] = useState<QuestionDraft[]>([]);
@@ -99,6 +101,7 @@ export default function AskForm({
     setSelectedOption(null);
     setSelectedOptions([]);
     setFreeTextAnswer("");
+    setNote("");
     setDraftId(null);
   }
 
@@ -112,6 +115,7 @@ export default function AskForm({
     setSelectedOptions(draft.type === "MULTIPLE_SELECT" ? selection : []);
     setSelectedOption(draft.type === "MULTIPLE_CHOICE" ? selection[0] ?? null : null);
     setFreeTextAnswer(draft.type === "TEXT" ? draft.askerAnswer : "");
+    setNote(draft.askerNote);
     setDraftId(draft.id);
     setDraftsOpen(false);
     setError(null);
@@ -135,6 +139,7 @@ export default function AskForm({
       askerAnswer: draftType === "TEXT" ? freeTextAnswer.trim()
         : draftType === "MULTIPLE_SELECT" ? (selectedOptions.length ? JSON.stringify([...selectedOptions].sort((a, b) => a - b)) : "")
         : selectedOption === null ? "" : String(selectedOption),
+      askerNote: note.trim(),
     };
     setLoading(true);
     try {
@@ -241,6 +246,7 @@ export default function AskForm({
           text: text.trim(),
           options: type === "MULTIPLE_CHOICE" ? trimmedOptions : undefined,
           askerAnswer,
+          askerNote: note.trim() || undefined,
           parentQuestionId: followUpTo?.id,
           draftId: draftId ?? undefined,
         }),
@@ -511,6 +517,8 @@ export default function AskForm({
           {categories.length === 0 ? "Wähle mindestens eine Kategorie" : "Zufallsfrage einsetzen"}
         </button>
       </fieldset>
+
+      <NoteField key={draftId ?? "new"} id="ask-note" value={note} onChange={setNote} hint="Erst sichtbar, wenn beide geantwortet haben." />
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       {draftStatus && <p role="status" className="text-sm text-green-700 dark:text-green-400">{draftStatus}</p>}

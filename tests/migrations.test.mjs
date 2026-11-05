@@ -64,7 +64,7 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       roomId: room.id, askerId: a.id, type: "TEXT", text: "Private Frage",
       askerAnswer: "Private Antwort A", status: "ANSWERED",
     }, ...old });
-    await db.answer.create({ data: { questionId: question.id, responderId: b.id, value: "Private Antwort B" } });
+    await db.answer.create({ data: { questionId: question.id, responderId: b.id, value: "Private Antwort B" }, ...old });
     await db.reaction.create({ data: { questionId: question.id, authorId: a.id, text: "Reaktion" }, ...old });
     await db.question.create({ data: {
       roomId: room.id, askerId: b.id, type: "TEXT", text: "Offene Frage", askerAnswer: "Noch geheim",
@@ -82,7 +82,7 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       roomId: singleRoom.id, askerId: b.id, type: "MULTIPLE_CHOICE",
       text: "Alte Einfachauswahl", options: '["A","B"]', askerAnswer: "0", status: "ANSWERED",
     }, ...old });
-    await db.answer.create({ data: { questionId: completed.id, responderId: a.id, value: "1" } });
+    await db.answer.create({ data: { questionId: completed.id, responderId: a.id, value: "1" }, ...old });
 
     await db.roomReactionVisit.create({ data: { userId: b.id, roomId: room.id } });
     const reaction = await db.reaction.findFirst({ where: { questionId: question.id }, ...old });
@@ -95,6 +95,8 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
           ? { id: true, username: true, passwordHash: true, isAdmin: true, createdAt: true }
           : model === "question"
             ? { id: true, type: true, text: true, options: true, askerAnswer: true, status: true, createdAt: true, roomId: true, askerId: true }
+            : model === "answer"
+              ? { id: true, value: true, createdAt: true, questionId: true, responderId: true }
             : model === "reaction"
               ? { id: true, text: true, createdAt: true, questionId: true, authorId: true }
               : undefined;
@@ -136,6 +138,12 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
 
     // Drafts, comment emojis and replies start empty; existing comments answer nobody.
     assert.equal((await db.reaction.findUnique({ where: { id: reaction.id } })).replyToId, null);
+    // Existing rounds have no hidden notes.
+    assert.equal((await db.question.findUnique({ where: { id: question.id } })).askerNote, null);
+    assert.equal(await db.answer.count({ where: { note: { not: null } } }), 0);
+    // Existing rounds have no hidden notes.
+    assert.equal((await db.question.findUnique({ where: { id: question.id } })).askerNote, null);
+    assert.equal(await db.answer.count({ where: { note: { not: null } } }), 0);
     assert.equal(await db.reactionEmoji.count(), 0);
     assert.equal(await db.questionDraft.count(), 0);
     const reply = await db.reaction.create({ data: {

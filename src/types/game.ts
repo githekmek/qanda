@@ -9,8 +9,10 @@ export type PublicQuestion = {
   createdAt: string;
   asker: { id: string; username: string };
   askerAnswer?: string;
+  askerNote?: string | null;
   answer?: {
     value: string;
+    note: string | null;
     createdAt: string;
     responder: { id: string; username: string };
   };
@@ -45,6 +47,7 @@ export type QuestionDraft = {
   text: string;
   options: string[] | null;
   askerAnswer: string;
+  askerNote: string;
   updatedAt: string;
 };
 

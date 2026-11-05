@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { answersMatch } from "@/lib/choiceAnswers.mjs";
 import { prisma } from "@/lib/db";
 
-export { MAX_OPTIONS, MIN_OPTIONS } from "@/lib/questionLimits";
+export { MAX_OPTIONS, MIN_OPTIONS, MAX_NOTE_LENGTH } from "@/lib/questionLimits";
 export const MAX_TEXT_LENGTH = 255;
 export const MAX_REACTION_LENGTH = 800;
 // Quotes repeat the start of the answered comment, not all of it.
@@ -18,8 +18,10 @@ export type PublicQuestion = {
   asker: { id: string; username: string };
   // Only present once the viewer is allowed to see it.
   askerAnswer?: string;
+  askerNote?: string | null;
   answer?: {
     value: string;
+    note: string | null;
     createdAt: string;
     responder: { id: string; username: string };
   };
@@ -121,11 +123,13 @@ export function serializeQuestionForViewer(
 
   if (viewerIsAsker || resolved) {
     base.askerAnswer = question.askerAnswer;
+    base.askerNote = question.askerNote;
   }
 
   if (resolved && question.answer) {
     base.answer = {
       value: question.answer.value,
+      note: question.answer.note,
       createdAt: question.answer.createdAt.toISOString(),
       responder: {
         id: question.answer.responder.id,

@@ -310,6 +310,11 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
                     ? "Deine Frage wartet noch auf eine Antwort."
                     : `${state.opponent.username} ist am Zug und stellt gleich eine Frage.`}
                 </p>
+                {state.pendingQuestion?.askerNote && (
+                  <p className="mx-auto mt-3 max-w-md whitespace-pre-line break-words border-l-2 border-violet-400 pl-3 text-left text-sm text-zinc-600 dark:text-zinc-300">
+                    <span className="font-medium">Dein Gedanke:</span> {state.pendingQuestion.askerNote}
+                  </p>
+                )}
               </div>
               <details className="group rounded-2xl">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg px-2 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-900">

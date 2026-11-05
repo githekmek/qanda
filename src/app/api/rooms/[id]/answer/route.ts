@@ -9,6 +9,7 @@ import {
   loadQuestionWithRelations,
   serializeQuestionForViewer,
   MAX_TEXT_LENGTH,
+  MAX_NOTE_LENGTH,
 } from "@/lib/game";
 
 export const maxDuration = 60;
@@ -16,6 +17,7 @@ export const maxDuration = 60;
 const answerSchema = z.object({
   questionId: z.string().min(1),
   value: z.string().trim().min(1).max(MAX_TEXT_LENGTH),
+  note: z.string().trim().max(MAX_NOTE_LENGTH).optional().transform((note) => note || null),
 });
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -41,7 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Dieser Raum ist archiviert" }, { status: 409 });
       }
 
-      const { questionId, value } = parsed.data;
+      const { questionId, value, note } = parsed.data;
 
       const question = await loadQuestionWithRelations(questionId, tx);
       if (!question || question.roomId !== room.id) {
@@ -77,7 +79,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       // Resume a partial write from an older version without replacing its answer.
       if (!question.answer) {
         await tx.answer.create({
-          data: { questionId: question.id, responderId: session.userId, value: storedValue },
+          data: { questionId: question.id, responderId: session.userId, value: storedValue, note },
         });
       }
       await tx.question.update({ where: { id: question.id }, data: { status: "ANSWERED" } });

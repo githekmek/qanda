@@ -92,6 +92,8 @@ model Question {
   text        String
   options     String? // JSON-encoded array of up to 8 strings, for choice questions
   askerAnswer String // asker's own answer: option index, JSON index array for MULTIPLE_SELECT, or free text
+  // Optional thought written before the reveal; hidden from the responder like askerAnswer.
+  askerNote   String?
   status      QuestionStatus @default(PENDING)
   createdAt   DateTime       @default(now())
 
@@ -112,6 +114,8 @@ model Question {
 model Answer {
   id        String   @id @default(cuid())
   value     String // responder's answer: option index, JSON index array for MULTIPLE_SELECT, or free text
+  // Optional thought written before seeing the asker's answer.
+  note      String?
   createdAt DateTime @default(now())
 
   questionId String   @unique
@@ -162,6 +166,7 @@ model QuestionDraft {
   text        String
   options     String? // JSON-encoded array, may contain empty options while drafting
   askerAnswer String  @default("") // may be incomplete while drafting
+  askerNote   String  @default("")
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 

@@ -44,6 +44,15 @@ function AnswerRow({
   );
 }
 
+function Note({ text }: { text: string | null | undefined }) {
+  if (!text) return null;
+  return (
+    <p className="ml-3 whitespace-pre-line break-words border-l-2 border-violet-400 pl-3 text-sm text-zinc-600 dark:text-zinc-300">
+      <span aria-hidden="true">💭 </span><span className="sr-only">Gedanke dazu: </span>{text}
+    </p>
+  );
+}
+
 function ReactionComposer({
   roomId,
   questionId,
@@ -222,6 +231,7 @@ export default function HistoryFeed({
                 itemMatches={q.type === "MULTIPLE_SELECT" ? matchingAnswerPositions(q.askerAnswer, q.answer?.value, q.options?.length ?? 0) : undefined}
                 matched={q.isMatch}
               />
+              <Note text={q.askerNote} />
               {q.answer && (
                 <AnswerRow
                   label={q.answer.responder.username}
@@ -230,6 +240,7 @@ export default function HistoryFeed({
                   matched={q.isMatch}
                 />
               )}
+              <Note text={q.answer?.note} />
             </div>
 
             {canAskFollowUp && !q.hasFollowUp && (

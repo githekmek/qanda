@@ -429,6 +429,92 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.equal((await request(path + "/" + kept.body.id, { actor: a, method: "DELETE" })).status, 404);
   });
 
+  await t.test("hidden notes stay private until both answered and are kept with drafts", async () => {
+    const a = await user(), b = await user(), r = await room(a, b, { currentAskerId: a.id });
+    const path = "/api/rooms/" + r.id;
+    const legacy = await db.question.create({ data: {
+      roomId: r.id, askerId: b.id, type: "TEXT", text: "Alte Runde", askerAnswer: "A",
+      status: "ANSWERED", answer: { create: { responderId: a.id, value: "B" } },
+    } });
+    const question = { type: "MULTIPLE_CHOICE", text: "Berge oder Meer?", options: ["Berge", "Meer"], askerAnswer: "0" };
+
+    assert.equal((await request(path + "/ask", { actor: a, data: { ...question, askerNote: "x".repeat(501) } })).status, 400);
+    const asked = await request(path + "/ask", { actor: a, data: { ...question, askerNote: "  Ich wette, du sagst Meer.  " } });
+    assert.equal(asked.status, 200);
+    assert.equal(asked.body.askerNote, "Ich wette, du sagst Meer.");
+
+    const pendingFor = async (actor) => (await request(path + "/state", { actor, method: "GET" })).body.pendingQuestion;
+    assert.equal((await pendingFor(a)).askerNote, "Ich wette, du sagst Meer.", "the asker sees their own note while waiting");
+    const hidden = await pendingFor(b);
+    assert.equal(hidden.askerNote, undefined, "the responder cannot see the note");
+    assert.equal(hidden.askerAnswer, undefined);
+    assert.ok(!JSON.stringify(hidden).includes("Meer.") , "not even indirectly");
+
+    assert.equal((await request(path + "/answer", { actor: b, data: { questionId: asked.body.id, value: "1", note: "y".repeat(501) } })).status, 400);
+    const answered = await request(path + "/answer", { actor: b, data: { questionId: asked.body.id, value: "1", note: "Erwischt." } });
+    assert.equal(answered.status, 200);
+    for (const actor of [a, b]) {
+      const revealed = (await request(path + "/state", { actor, method: "GET" })).body.history.find((q) => q.id === asked.body.id);
+      assert.equal(revealed.askerNote, "Ich wette, du sagst Meer.");
+      assert.equal(revealed.answer.note, "Erwischt.");
+    }
+    const old = (await request(path + "/state", { actor: a, method: "GET" })).body.history.find((q) => q.id === legacy.id);
+    assert.equal(old.askerNote, null);
+    assert.equal(old.answer.note, null);
+
+    // An empty note is stored as no note.
+    const plain = await request(path + "/ask", { actor: b, data: { ...question, askerNote: "   " } });
+    assert.equal((await db.question.findUnique({ where: { id: plain.body.id } })).askerNote, null);
+
+    const draft = await request(path + "/drafts", { actor: a, data: { type: "TEXT", text: "Später", askerNote: "Notiz im Entwurf" } });
+    assert.equal(draft.status, 200);
+    assert.equal(draft.body.askerNote, "Notiz im Entwurf");
+    assert.equal((await request(path + "/drafts", { actor: a, data: { type: "TEXT", text: "Zu lang", askerNote: "z".repeat(501) } })).status, 400);
+  });
+
+  await t.test("hidden notes stay private until both answered and are kept with drafts", async () => {
+    const a = await user(), b = await user(), r = await room(a, b, { currentAskerId: a.id });
+    const path = "/api/rooms/" + r.id;
+    const legacy = await db.question.create({ data: {
+      roomId: r.id, askerId: b.id, type: "TEXT", text: "Alte Runde", askerAnswer: "A",
+      status: "ANSWERED", answer: { create: { responderId: a.id, value: "B" } },
+    } });
+    const question = { type: "MULTIPLE_CHOICE", text: "Berge oder Meer?", options: ["Berge", "Meer"], askerAnswer: "0" };
+
+    assert.equal((await request(path + "/ask", { actor: a, data: { ...question, askerNote: "x".repeat(501) } })).status, 400);
+    const asked = await request(path + "/ask", { actor: a, data: { ...question, askerNote: "  Ich wette, du sagst Meer.  " } });
+    assert.equal(asked.status, 200);
+    assert.equal(asked.body.askerNote, "Ich wette, du sagst Meer.");
+
+    const pendingFor = async (actor) => (await request(path + "/state", { actor, method: "GET" })).body.pendingQuestion;
+    assert.equal((await pendingFor(a)).askerNote, "Ich wette, du sagst Meer.", "the asker sees their own note while waiting");
+    const hidden = await pendingFor(b);
+    assert.equal(hidden.askerNote, undefined, "the responder cannot see the note");
+    assert.equal(hidden.askerAnswer, undefined);
+    assert.ok(!JSON.stringify(hidden).includes("Meer.") , "not even indirectly");
+
+    assert.equal((await request(path + "/answer", { actor: b, data: { questionId: asked.body.id, value: "1", note: "y".repeat(501) } })).status, 400);
+    const answered = await request(path + "/answer", { actor: b, data: { questionId: asked.body.id, value: "1", note: "Erwischt." } });
+    assert.equal(answered.status, 200);
+    for (const actor of [a, b]) {
+      const revealed = (await request(path + "/state", { actor, method: "GET" })).body.history.find((q) => q.id === asked.body.id);
+      assert.equal(revealed.askerNote, "Ich wette, du sagst Meer.");
+      assert.equal(revealed.answer.note, "Erwischt.");
+    }
+    const old = (await request(path + "/state", { actor: a, method: "GET" })).body.history.find((q) => q.id === legacy.id);
+    assert.equal(old.askerNote, null);
+    assert.equal(old.answer.note, null);
+
+    // An empty note is stored as no note.
+    const plain = await request(path + "/ask", { actor: b, data: { ...question, askerNote: "   " } });
+    assert.equal((await db.question.findUnique({ where: { id: plain.body.id } })).askerNote, null);
+
+    const draft = await request(path + "/drafts", { actor: a, data: { type: "TEXT", text: "Später", askerNote: "Notiz im Entwurf" } });
+    assert.equal(draft.status, 200);
+    assert.equal(draft.body.askerNote, "Notiz im Entwurf");
+    assert.equal((await request(path + "/drafts", { actor: a, data: { type: "TEXT", text: "Zu lang", askerNote: "z".repeat(501) } })).status, 400);
+  });
+
   await t.test("comments allow 800 characters, quoted replies and one toggle per emoji and person", async () => {
     const a = await user(), b = await user(), outsider = await user(), r = await room(a, b);
     const q = await db.question.create({ data: {

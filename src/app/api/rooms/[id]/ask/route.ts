@@ -11,6 +11,7 @@ import {
   MAX_OPTIONS,
   MIN_OPTIONS,
   MAX_TEXT_LENGTH,
+  MAX_NOTE_LENGTH,
 } from "@/lib/game";
 
 export const maxDuration = 60;
@@ -25,6 +26,7 @@ const askSchema = z
       .max(MAX_OPTIONS)
       .optional(),
     askerAnswer: z.string().trim().min(1).max(MAX_TEXT_LENGTH),
+    askerNote: z.string().trim().max(MAX_NOTE_LENGTH).optional().transform((note) => note || null),
     parentQuestionId: z.string().min(1).max(64).optional(),
     // A sent draft is removed in the same transaction that creates the question.
     draftId: z.string().min(1).max(64).optional(),
@@ -94,7 +96,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: "Du bist nicht am Zug" }, { status: 403 });
       }
 
-      const { type, text, options, askerAnswer, parentQuestionId, draftId } = parsed.data;
+      const { type, text, options, askerAnswer, askerNote, parentQuestionId, draftId } = parsed.data;
 
       if (parentQuestionId) {
         const parent = await tx.question.findUnique({
@@ -118,6 +120,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           askerAnswer: type === "MULTIPLE_SELECT"
             ? JSON.stringify(parseMultipleAnswer(askerAnswer, options!.length))
             : askerAnswer,
+          askerNote,
           askerId: session.userId,
           parentQuestionId: parentQuestionId ?? null,
         },

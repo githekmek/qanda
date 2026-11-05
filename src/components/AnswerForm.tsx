@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { PublicQuestion } from "@/types/game";
+import NoteField from "./NoteField";
 
 const MAX_TEXT_LENGTH = 255;
 
@@ -19,6 +20,7 @@ export default function AnswerForm({
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [textAnswer, setTextAnswer] = useState("");
+  const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -46,7 +48,7 @@ export default function AnswerForm({
       const res = await fetch(`/api/rooms/${roomId}/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: question.id, value }),
+        body: JSON.stringify({ questionId: question.id, value, note: note.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -56,6 +58,7 @@ export default function AnswerForm({
       setSelectedOption(null);
       setSelectedOptions([]);
       setTextAnswer("");
+      setNote("");
       onSubmitted();
     } catch {
       setError("Verbindung zum Server fehlgeschlagen");
@@ -125,6 +128,8 @@ export default function AnswerForm({
       <p className="text-xs text-zinc-400">
         {multiple ? "Die Antworten" : "Die Antwort"} von {question.asker.username} siehst du, sobald du selbst geantwortet hast.
       </p>
+
+      <NoteField id="answer-note" value={note} onChange={setNote} hint="Erst sichtbar, wenn beide geantwortet haben." />
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 

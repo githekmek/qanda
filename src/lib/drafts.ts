@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { QuestionDraft as DraftRow } from "@prisma/client";
-import { MAX_OPTIONS } from "@/lib/questionLimits";
+import { MAX_NOTE_LENGTH, MAX_OPTIONS } from "@/lib/questionLimits";
 import { MAX_TEXT_LENGTH } from "@/lib/game";
 import type { QuestionDraft } from "@/types/game";
 
@@ -12,6 +12,7 @@ export const draftSchema = z.object({
   text: z.string().trim().min(1, "Bitte zuerst eine Frage eingeben").max(MAX_TEXT_LENGTH),
   options: z.array(z.string().max(100)).max(MAX_OPTIONS).optional(),
   askerAnswer: z.string().max(MAX_TEXT_LENGTH).default(""),
+  askerNote: z.string().max(MAX_NOTE_LENGTH).default(""),
 }).strict();
 
 export function draftData(data: z.infer<typeof draftSchema>) {
@@ -20,6 +21,7 @@ export function draftData(data: z.infer<typeof draftSchema>) {
     text: data.text,
     options: data.type === "TEXT" ? null : JSON.stringify(data.options ?? []),
     askerAnswer: data.askerAnswer,
+    askerNote: data.askerNote,
   };
 }
 
@@ -30,6 +32,7 @@ export function serializeDraft(draft: DraftRow): QuestionDraft {
     text: draft.text,
     options: draft.options ? (JSON.parse(draft.options) as string[]) : null,
     askerAnswer: draft.askerAnswer,
+    askerNote: draft.askerNote,
     updatedAt: draft.updatedAt.toISOString(),
   };
 }
