@@ -175,6 +175,11 @@ sobald die verwendete Prisma-Version selbst eine korrigierte Abhängigkeit enth�
 Security-Update Oktober 2026: `sharp` ist auf 0.35.5 und `source-map-js` auf 1.2.2
 festgelegt. Der vollständige Abhängigkeitscheck bleibt eine Voraussetzung für die Freigabe.
 
+Security-Update November 2026: `minimatch` ist innerhalb von
+`@typescript-eslint/typescript-estree` auf 11.0.4 überschrieben
+(GHSA-g3hv-75wg-m249, nur Lint-Werkzeuge). Die Überschreibung kann entfallen,
+sobald typescript-eslint selbst eine korrigierte Version verwendet.
+
 ### Befristeter Umfang der Entwicklungs-Ausnahme
 
 Der Betreiber hat am 13.10.2026 ausschließlich GHSA-vfj7-8cjw-p6xm für die
