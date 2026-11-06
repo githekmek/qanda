@@ -54,7 +54,8 @@ function OptionField({ index, value, onChange }: {
   useLayoutEffect(fitToText, [fitToText]);
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
+    // The counter overlays the field so focusing or leaving it never shifts the layout.
+    <div className="relative flex min-w-0 flex-1 flex-col">
       <textarea
         ref={field}
         rows={1}
@@ -68,10 +69,12 @@ function OptionField({ index, value, onChange }: {
         autoCorrect="on"
         enterKeyHint="enter"
         aria-label={`Option ${index + 1}`}
-        className="min-w-0 resize-none overflow-hidden rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+        className="min-w-0 resize-none overflow-hidden rounded-lg border border-zinc-300 bg-transparent py-1.5 pl-3 pr-16 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
       />
       {focused && (
-        <span className="mt-0.5 text-right text-xs text-zinc-400">{value.length}/{MAX_OPTION_LENGTH}</span>
+        <span aria-hidden="true" className="pointer-events-none absolute bottom-1.5 right-2 text-xs text-zinc-400">
+          {value.length}/{MAX_OPTION_LENGTH}
+        </span>
       )}
     </div>
   );
