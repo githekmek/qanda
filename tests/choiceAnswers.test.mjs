@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseMultipleAnswer, answersMatch, answerLabels, matchingAnswerPositions } from "../src/lib/choiceAnswers.mjs";
+import { selectedPositions, parseMultipleAnswer, answersMatch, answerLabels, matchingAnswerPositions } from "../src/lib/choiceAnswers.mjs";
 
 test("multiple answers require unique integer indices within the available options", () => {
   assert.deepEqual(parseMultipleAnswer("[4,0,2]", 5), [0,2,4]);
@@ -41,4 +41,13 @@ test("individual matches use option indices and include a single shared selectio
   assert.deepEqual(matchingAnswerPositions("[1]", "[0,1]", 2), [true]);
   assert.deepEqual(matchingAnswerPositions("[0]", "[1]", 2), [false]);
   assert.deepEqual(matchingAnswerPositions("[0,1]", undefined, 2), [false, false]);
+});
+
+test("selected positions cover single, multiple and free-text answers", () => {
+  assert.deepEqual(selectedPositions("MULTIPLE_CHOICE", "2", 4), [2]);
+  assert.deepEqual(selectedPositions("MULTIPLE_CHOICE", "7", 4), []);
+  assert.deepEqual(selectedPositions("MULTIPLE_SELECT", "[3,0]", 4), [0, 3]);
+  assert.deepEqual(selectedPositions("MULTIPLE_SELECT", "kaputt", 4), []);
+  assert.deepEqual(selectedPositions("TEXT", "Freitext", 0), []);
+  assert.deepEqual(selectedPositions("MULTIPLE_CHOICE", undefined, 4), []);
 });

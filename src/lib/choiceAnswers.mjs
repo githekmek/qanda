@@ -37,6 +37,20 @@ export function answerLabels(type, options, value) {
   return [value];
 }
 
+/** Option positions chosen in one answer; empty for free text or an unreadable value.
+ * @param {string} type @param {string | undefined} value @param {number} optionCount
+ * @returns {number[]}
+ */
+export function selectedPositions(type, value, optionCount) {
+  if (value === undefined) return [];
+  if (type === "MULTIPLE_SELECT") return parseMultipleAnswer(value, optionCount) ?? [];
+  if (type === "MULTIPLE_CHOICE") {
+    const index = Number(value);
+    return Number.isInteger(index) && index >= 0 && index < optionCount ? [index] : [];
+  }
+  return [];
+}
+
 /** Matches option identities, not labels (two options may have the same text).
  * @param {string | undefined} value @param {string | undefined} other @param {number} optionCount
  * @returns {boolean[]}

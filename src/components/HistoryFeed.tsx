@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { answerLabels, matchingAnswerPositions } from "@/lib/choiceAnswers.mjs";
+import { answerLabels, matchingAnswerPositions, selectedPositions } from "@/lib/choiceAnswers.mjs";
 import ReactionComment from "./ReactionComment";
 import type { PublicQuestion } from "@/types/game";
 
@@ -50,6 +50,50 @@ function Note({ text }: { text: string | null | undefined }) {
     <p className="ml-3 whitespace-pre-line break-words border-l-2 border-violet-400 pl-3 text-sm text-zinc-600 dark:text-zinc-300">
       <span aria-hidden="true">💭 </span><span className="sr-only">Gedanke dazu: </span>{text}
     </p>
+  );
+}
+
+/** Every option of an answered multiple-choice question, with who chose it. */
+function AllOptions({ question }: { question: PublicQuestion }) {
+  const [open, setOpen] = useState(false);
+  const options = question.options;
+  if (!options || question.type === "TEXT") return null;
+  const count = options.length;
+  const asker = new Set(selectedPositions(question.type, question.askerAnswer, count));
+  const responder = new Set(selectedPositions(question.type, question.answer?.value, count));
+  const id = `options-${question.id}`;
+
+  return (
+    <div className="flex flex-col gap-1">
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}
+        className="flex min-h-9 items-center gap-2 self-start rounded-lg px-2 text-left text-sm text-zinc-600 hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-blue-500 dark:text-zinc-300 dark:hover:bg-zinc-900">
+        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+        Alle Antwortmöglichkeiten ({count})
+      </button>
+      <ul id={id} hidden={!open} className="ml-2 flex flex-col gap-1">
+        {options.map((option, index) => {
+          const chosen = asker.has(index) || responder.has(index);
+          return (
+            <li key={index}
+              className={`flex items-start justify-between gap-3 rounded-lg px-3 py-1.5 text-sm ${chosen
+                ? "border border-zinc-200 dark:border-zinc-700"
+                : "border border-dashed border-zinc-300 text-zinc-400 dark:border-zinc-700 dark:text-zinc-500"}`}>
+              <span className="min-w-0 whitespace-pre-line break-words">{option}</span>
+              {chosen ? (
+                <span className="flex shrink-0 flex-wrap justify-end gap-1">
+                  {asker.has(index) && (
+                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-900 dark:bg-violet-900 dark:text-violet-100">{question.asker.username}</span>
+                  )}
+                  {responder.has(index) && question.answer && (
+                    <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-900 dark:bg-teal-900 dark:text-teal-100">{question.answer.responder.username}</span>
+                  )}
+                </span>
+              ) : <span className="sr-only">von niemandem gewählt</span>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -246,6 +290,7 @@ export default function HistoryFeed({
               )}
               <Note text={q.answer?.note} />
             </div>
+            <AllOptions question={q} />
 
             {canAskFollowUp && !q.hasFollowUp && (
               <button

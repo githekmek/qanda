@@ -1115,6 +1115,17 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await page.reload();
       await page.getByText("Teilweise gleich", { exact: false }).waitFor();
       assert.equal(await page.getByLabel("Von beiden gewählt", { exact: true }).count(), 2);
+      // All options, including the one nobody chose, are available on demand.
+      const allOptions = page.getByRole("button", { name: "Alle Antwortmöglichkeiten (3)" });
+      assert.equal(await allOptions.getAttribute("aria-expanded"), "false");
+      const list = page.locator("#options-" + q.id);
+      assert.equal(await list.isVisible(), false);
+      await allOptions.click();
+      assert.equal(await list.getByRole("listitem").count(), 3);
+      assert.equal(await list.getByText("Sport", { exact: true }).isVisible(), true);
+      assert.equal(await list.getByText("von niemandem gewählt", { exact: true }).count(), 1);
+      assert.equal(await list.getByText(a.username, { exact: true }).count(), 1);
+      assert.equal(await list.getByText(b.username, { exact: true }).count(), 2);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     } finally { await browser.close(); }
   });

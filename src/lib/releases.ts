@@ -7,6 +7,7 @@ export const RELEASE_NOTES = [
       "Reagiert dein Mitspieler mit einem Emoji auf deinen Kommentar, siehst du das wie einen neuen Kommentar.",
       "Hinweise auf neue Kommentare und Reaktionen verschwinden, sobald du sie gesehen hast.",
       "Kommentare, die du schon in der App gesehen hast, lösen keine E-Mail oder Push-Nachricht mehr aus.",
+      "Bei beantworteten Multiple-Choice-Fragen lassen sich alle Antwortmöglichkeiten aufklappen – auch die, die niemand gewählt hat.",
     ],
   },
   {
