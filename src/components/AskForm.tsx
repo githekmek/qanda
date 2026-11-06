@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { QuestionDraft, QuestionType } from "@/types/game";
 import {
   CATEGORIES,
@@ -9,7 +9,7 @@ import {
   type QuestionCategory,
 } from "@/lib/questionCatalog";
 
-import { MAX_OPTIONS, MIN_OPTIONS } from "@/lib/questionLimits";
+import { MAX_OPTION_LENGTH, MAX_OPTIONS, MIN_OPTIONS } from "@/lib/questionLimits";
 import NoteField from "./NoteField";
 const MAX_TEXT_LENGTH = 255;
 
@@ -34,6 +34,48 @@ const CATEGORY_STYLES: Record<QuestionCategory, { chip: string; box: string }> =
 const INACTIVE_CHIP =
   "border-zinc-300 bg-white text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:bg-transparent dark:text-zinc-400";
 const INACTIVE_BOX = "border-zinc-400 bg-white dark:border-zinc-500 dark:bg-transparent";
+
+/** One answer option: starts as a single line, grows with the text and allows line breaks. */
+function OptionField({ index, value, onChange }: {
+  index: number;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const field = useRef<HTMLTextAreaElement>(null);
+  const fitToText = useCallback(() => {
+    const node = field.current;
+    if (!node) return;
+    node.style.height = "";
+    if (!value || node.scrollHeight === 0) return;
+    const borders = node.offsetHeight - node.clientHeight;
+    node.style.height = `${Math.max(node.scrollHeight + borders, node.offsetHeight)}px`;
+  }, [value]);
+  useLayoutEffect(fitToText, [fitToText]);
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-col">
+      <textarea
+        ref={field}
+        rows={1}
+        value={value}
+        maxLength={MAX_OPTION_LENGTH}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => { setFocused(true); fitToText(); }}
+        onBlur={() => setFocused(false)}
+        placeholder={`Option ${index + 1}`}
+        spellCheck
+        autoCorrect="on"
+        enterKeyHint="enter"
+        aria-label={`Option ${index + 1}`}
+        className="min-w-0 resize-none overflow-hidden rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
+      />
+      {focused && (
+        <span className="mt-0.5 text-right text-xs text-zinc-400">{value.length}/{MAX_OPTION_LENGTH}</span>
+      )}
+    </div>
+  );
+}
 
 /** Reads a draft's possibly incomplete own answer back into the form's selection state. */
 function draftSelection(draft: QuestionDraft) {
@@ -392,34 +434,23 @@ export default function AskForm({
           </span>
           <p className="text-xs text-zinc-500">{multiple ? "Wähle eine oder mehrere Antworten." : "Wähle genau eine Antwort."}</p>
           {options.map((option, index) => (
-            <div key={index} className="flex items-center gap-2">
+            <div key={index} className="flex items-start gap-2">
               <input
                 type={multiple ? "checkbox" : "radio"}
                 name="asker-answer"
-                className="h-4 w-4 shrink-0 accent-zinc-900 dark:accent-zinc-100"
+                className="mt-2 h-4 w-4 shrink-0 accent-zinc-900 dark:accent-zinc-100"
                 checked={multiple ? selectedOptions.includes(index) : selectedOption === index}
                 onChange={() => multiple
                   ? setSelectedOptions((prev) => prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index])
                   : setSelectedOption(index)}
                 aria-label={`Option ${index + 1} als eigene Antwort auswählen`}
               />
-              <input
-                type="text"
-                value={option}
-                maxLength={100}
-                onChange={(e) => updateOption(index, e.target.value)}
-                placeholder={`Option ${index + 1}`}
-                spellCheck
-                autoCorrect="on"
-                enterKeyHint={canSend ? "send" : "done"}
-                aria-label={`Option ${index + 1}`}
-                className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-zinc-500 dark:border-zinc-700"
-              />
+              <OptionField index={index} value={option} onChange={(value) => updateOption(index, value)} />
               {options.length > MIN_OPTIONS && (
                 <button
                   type="button"
                   onClick={() => removeOption(index)}
-                  className="text-xs text-zinc-400 hover:text-red-500"
+                  className="mt-2 text-xs text-zinc-400 hover:text-red-500"
                   aria-label={`Option ${index + 1} entfernen`}
                 >
                   ✕

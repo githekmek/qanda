@@ -31,7 +31,7 @@ function AnswerRow({
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
-      <div className="min-w-0 break-words">
+      <div className="min-w-0 whitespace-pre-line break-words">
         <span className="font-medium text-zinc-500">{label}:</span>{" "}
         {answers.length > 1 ? <ul className="mt-1 list-disc pl-5">{answers.map((answer, index) => <li key={index}>{answer}{itemMatches?.[index] && <span className="ml-2 text-green-600 dark:text-green-400" aria-label="Von beiden gewählt">✓</span>}</li>)}</ul> : <>{answers[0]}{itemMatches?.[0] && <span className="ml-2 text-green-600 dark:text-green-400" aria-label="Von beiden gewählt">✓</span>}</>}
       </div>

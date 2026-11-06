@@ -89,18 +89,18 @@ export default function AnswerForm({
           {question.options.map((option, index) => (
             <label
               key={index}
-              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 text-sm focus-within:ring-2 focus-within:ring-zinc-400 ${(multiple ? selectedOptions.includes(index) : selectedOption === index) ? "border-zinc-700 bg-zinc-50 dark:border-zinc-300 dark:bg-zinc-900" : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"}`}
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 text-sm focus-within:ring-2 focus-within:ring-zinc-400 ${(multiple ? selectedOptions.includes(index) : selectedOption === index) ? "border-zinc-700 bg-zinc-50 dark:border-zinc-300 dark:bg-zinc-900" : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"}`}
             >
               <input
                 type={multiple ? "checkbox" : "radio"}
                 name="answer"
-                className="h-4 w-4 shrink-0 accent-zinc-900 dark:accent-zinc-100"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-zinc-900 dark:accent-zinc-100"
                 checked={multiple ? selectedOptions.includes(index) : selectedOption === index}
                 onChange={() => multiple
                   ? setSelectedOptions((prev) => prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index])
                   : setSelectedOption(index)}
               />
-              {option}
+              <span className="min-w-0 whitespace-pre-line break-words">{option}</span>
             </label>
           ))}
         </div>

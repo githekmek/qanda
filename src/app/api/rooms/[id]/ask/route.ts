@@ -10,6 +10,7 @@ import {
   serializeQuestionForViewer,
   MAX_OPTIONS,
   MIN_OPTIONS,
+  MAX_OPTION_LENGTH,
   MAX_TEXT_LENGTH,
   MAX_NOTE_LENGTH,
 } from "@/lib/game";
@@ -21,7 +22,7 @@ const askSchema = z
     type: z.enum(["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TEXT"]),
     text: z.string().trim().min(1, "Frage darf nicht leer sein").max(MAX_TEXT_LENGTH),
     options: z
-      .array(z.string().trim().min(1).max(100))
+      .array(z.string().trim().min(1).max(MAX_OPTION_LENGTH))
       .min(MIN_OPTIONS)
       .max(MAX_OPTIONS)
       .optional(),

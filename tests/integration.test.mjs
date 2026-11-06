@@ -570,6 +570,21 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.deepEqual(archived.reactions.find((c) => c.id === legacy.id).emojis, [{ emoji: "👍", count: 2, mine: true }]);
   });
 
+  await t.test("choice options allow 200 characters with line breaks and reject longer ones", async () => {
+    const a = await user(), b = await user(), r = await room(a, b, { currentAskerId: a.id });
+    const path = "/api/rooms/" + r.id;
+    const long = "Erste Zeile\n" + "y".repeat(188);
+    assert.equal(long.length, 200);
+    const question = { type: "MULTIPLE_CHOICE", text: "Lange Optionen", options: [long, "Kurz"], askerAnswer: "0" };
+
+    assert.equal((await request(path + "/ask", { actor: a, data: { ...question, options: [long + "z", "Kurz"] } })).status, 400);
+    assert.equal((await request(path + "/drafts", { actor: a, data: { ...question, options: [long + "z", "Kurz"] } })).status, 400);
+    assert.equal((await request(path + "/drafts", { actor: a, data: question })).status, 200);
+    const asked = await request(path + "/ask", { actor: a, data: question });
+    assert.equal(asked.status, 200);
+    assert.deepEqual(asked.body.options, [long, "Kurz"], "line breaks inside an option are kept");
+  });
+
   await t.test("push subscriptions are private, device-specific and opt in", async () => {
     const a = await user(), b = await user();
     const endpoint = "https://push.example.test/subscription/" + randomBytes(12).toString("hex");

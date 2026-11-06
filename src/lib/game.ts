@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { answersMatch } from "@/lib/choiceAnswers.mjs";
 import { prisma } from "@/lib/db";
 
-export { MAX_OPTIONS, MIN_OPTIONS, MAX_NOTE_LENGTH } from "@/lib/questionLimits";
+export { MAX_OPTIONS, MIN_OPTIONS, MAX_OPTION_LENGTH, MAX_NOTE_LENGTH } from "@/lib/questionLimits";
 export const MAX_TEXT_LENGTH = 255;
 export const MAX_REACTION_LENGTH = 800;
 // Quotes repeat the start of the answered comment, not all of it.

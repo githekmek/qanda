@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { QuestionDraft as DraftRow } from "@prisma/client";
-import { MAX_NOTE_LENGTH, MAX_OPTIONS } from "@/lib/questionLimits";
+import { MAX_NOTE_LENGTH, MAX_OPTION_LENGTH, MAX_OPTIONS } from "@/lib/questionLimits";
 import { MAX_TEXT_LENGTH } from "@/lib/game";
 import type { QuestionDraft } from "@/types/game";
 
@@ -10,7 +10,7 @@ export const MAX_DRAFTS_PER_ROOM = 50;
 export const draftSchema = z.object({
   type: z.enum(["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TEXT"]),
   text: z.string().trim().min(1, "Bitte zuerst eine Frage eingeben").max(MAX_TEXT_LENGTH),
-  options: z.array(z.string().max(100)).max(MAX_OPTIONS).optional(),
+  options: z.array(z.string().max(MAX_OPTION_LENGTH)).max(MAX_OPTIONS).optional(),
   askerAnswer: z.string().max(MAX_TEXT_LENGTH).default(""),
   askerNote: z.string().max(MAX_NOTE_LENGTH).default(""),
 }).strict();
