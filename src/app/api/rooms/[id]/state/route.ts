@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { findRoomForMember, opponentOf } from "@/lib/rooms";
 import { questionInclude, serializeQuestionForViewer } from "@/lib/game";
+import { emojiKey } from "@/lib/commentEmojis";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -35,6 +36,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     },
     select: { id: true, questionId: true },
   }) : [];
+  // Emoji reactions by the other player on the viewer's own comments.
+  const unreadEmojis = await prisma.reactionEmoji.findMany({
+    where: {
+      seenAt: null,
+      userId: { not: session.userId },
+      reaction: { authorId: session.userId, question: { roomId: room.id, status: "ANSWERED" } },
+    },
+    select: { reactionId: true, emoji: true, reaction: { select: { questionId: true } } },
+  });
   const historyRaw = await prisma.question.findMany({
     where: { roomId: room.id, status: "ANSWERED" },
     include: questionInclude,
@@ -51,7 +61,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       roomId: room.id, status: "ANSWERED",
       id: { notIn: historyRaw.map((q) => q.id) },
       OR: [
-        { id: { in: unread.map((r) => r.questionId) } },
+        { id: { in: [...unread.map((r) => r.questionId), ...unreadEmojis.map((e) => e.reaction.questionId)] } },
         ...(since && !Number.isNaN(since.getTime()) ? [{ createdAt: { gte: since } }] : []),
       ],
     },
@@ -62,6 +72,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   return NextResponse.json({
     unreadReactionIds: unread.map((r) => r.id),
+    unreadEmojiKeys: unreadEmojis.map((e) => emojiKey(e.reactionId, e.emoji)),
     room: {
       id: room.id,
       name: room.name,

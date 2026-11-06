@@ -32,6 +32,8 @@ export type PublicQuestion = {
 
 export type RoomStateResponse = {
   unreadReactionIds: string[];
+  /** "commentId:emoji" for new emoji reactions on the viewer's own comments. */
+  unreadEmojiKeys: string[];
   room: { id: string; name: string | null; archived: boolean; inviteCode: string | null };
   me: { id: string; username: string };
   opponent: { id: string; username: string } | null;

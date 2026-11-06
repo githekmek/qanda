@@ -737,7 +737,42 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.ok(await db.reactionRead.findUnique({ where: { userId_reactionId: { userId: a.id, reactionId: old.id } } }));
   });
 
-  await t.test("browser: collapse, visibility receipts, persistent visit highlights and new comments while collapsed", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+  await t.test("emoji reactions on own comments are new until the comment was seen", async () => {
+    const a = await user(), b = await user(), r = await room(a, b);
+    const q = await db.question.create({ data: { roomId: r.id, askerId: a.id, type: "TEXT", text: "Emojis", askerAnswer: "A", status: "ANSWERED" } });
+    const path = "/api/rooms/" + r.id;
+    const mine = await db.reaction.create({ data: { questionId: q.id, authorId: a.id, text: "Mein Kommentar" } });
+    const theirs = await db.reaction.create({ data: { questionId: q.id, authorId: b.id, text: "Sein Kommentar" } });
+    for (const actor of [a, b]) await request(path + "/reaction-seen", { actor, data: { reactionIds: [] } });
+    const emoji = (actor, reactionId, value, active = true) =>
+      request(path + "/reaction-emoji", { actor, data: { reactionId, emoji: value, active } });
+    const keys = async (actor) => (await request(path + "/state", { actor, method: "GET" })).body.unreadEmojiKeys;
+
+    assert.equal((await emoji(b, mine.id, "😂")).status, 200);
+    assert.equal((await emoji(b, mine.id, "❤️")).status, 200);
+    assert.equal((await emoji(a, mine.id, "👍")).status, 200, "own emojis never count");
+    assert.equal((await emoji(b, theirs.id, "👍")).status, 200, "emojis on the other player's comments are not for me");
+    assert.deepEqual(new Set(await keys(a)), new Set([mine.id + ":😂", mine.id + ":❤️"]));
+    assert.deepEqual(await keys(b), []);
+
+    // Taking an emoji back removes its hint.
+    await emoji(b, mine.id, "❤️", false);
+    assert.deepEqual(await keys(a), [mine.id + ":😂"]);
+
+    // Only the comment's author can acknowledge it, by seeing the comment.
+    await request(path + "/reaction-seen", { actor: b, data: { reactionIds: [mine.id] } });
+    assert.deepEqual(await keys(a), [mine.id + ":😂"]);
+    await request(path + "/reaction-seen", { actor: a, data: { reactionIds: [mine.id] } });
+    assert.deepEqual(await keys(a), []);
+    assert.equal(await db.reactionRead.count({ where: { userId: a.id, reactionId: mine.id } }), 0, "own comments get no read receipt");
+
+    // Setting it again later is news again.
+    await emoji(b, mine.id, "😂", false);
+    await emoji(b, mine.id, "😂");
+    assert.deepEqual(await keys(a), [mine.id + ":😂"]);
+  });
+
+  await t.test("browser: collapse, visibility receipts, highlights cleared once seen and new comments while collapsed", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
     const { chromium } = await import("playwright");
     const { mkdir } = await import("node:fs/promises");
     const browser = await chromium.launch();
@@ -783,7 +818,8 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await waitRead(first.id);
       await waitRead(second.id);
       assert.equal(failedReceipt, true, "a failed receipt is retried successfully");
-      assert.equal(await page.locator("[data-new=true]").count(), 2, "receipts do not remove current-visit highlighting");
+      await page.locator("[data-new=true]").first().waitFor({ state: "detached" });
+      assert.equal(await page.locator("[data-new=true]").count(), 0, "seen comments lose their highlight right away");
       await page.getByRole("textbox", { name: "Kommentar schreiben", exact: true }).fill("Mein Entwurf");
       await toggle.click();
       const third = await add(b, "Neu während eingeklappt");
@@ -1234,6 +1270,39 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.ok(delivered[0].subject.includes("Kommentare"));
     assert.ok(!delivered[0].text.includes("PRIVATE"));
     assert.equal(await db.notification.count({ where: { userId: b.id } }), 0);
+  });
+
+  await t.test("comments seen in the app send no mail", async () => {
+    const a = await verifiedUser(), b = await verifiedUser(), r = await room(a, b);
+    await request("/api/profile", { actor: b, method: "PATCH", data: { notifyComments: true } });
+    const q = await db.question.create({ data: { roomId: r.id, askerId: a.id, type: "TEXT",
+      text: "Frage", askerAnswer: "A", status: "ANSWERED" } });
+    const path = "/api/rooms/" + r.id;
+    await request(path + "/reaction-seen", { actor: b, data: { reactionIds: [] } });
+    const comment = async () => (await request(path + "/reaction", { actor: a, data: { questionId: q.id, text: "Hallo" } })).body;
+    const sentToB = () => mails.filter(m => m.to[0].address === b.email).length;
+
+    // Seeing the comment cancels the pending message.
+    const first = await comment();
+    const firstId = first.reactions.at(-1).id;
+    assert.equal(await db.notification.count({ where: { userId: b.id } }), 1);
+    await request(path + "/reaction-seen", { actor: b, data: { reactionIds: [firstId] } });
+    assert.equal(await db.notification.count({ where: { userId: b.id } }), 0);
+
+    // A comment read while its message was already queued is skipped at dispatch.
+    const second = await comment();
+    const secondId = second.reactions.at(-1).id;
+    await db.reactionRead.create({ data: { userId: b.id, reactionId: secondId } });
+    await db.notification.updateMany({ where: { userId: b.id }, data: { dueAt: new Date(0) } });
+    assert.equal((await dispatch()).status, 200);
+    assert.equal(sentToB(), 0);
+    assert.equal(await db.notification.count({ where: { userId: b.id } }), 0);
+
+    // Unseen comments are still delivered.
+    await comment();
+    await db.notification.updateMany({ where: { userId: b.id }, data: { dueAt: new Date(0) } });
+    await dispatch();
+    assert.equal(sentToB(), 1);
   });
 
   await t.test("opting out cancels pending mails; archive and stale turns are suppressed; dispatch requires secret", async () => {

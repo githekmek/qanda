@@ -35,6 +35,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         data: reactions.map((r) => ({ userId: session.userId, reactionId: r.id })),
         skipDuplicates: true,
       });
+      // A seen comment needs no email or push any more. Deliveries already in
+      // progress are re-checked by the dispatcher.
+      if (reactions.length) {
+        await tx.notification.deleteMany({
+          where: {
+            claim: null,
+            eventKey: { in: reactions.flatMap((r) => ["email", "push"].map((channel) =>
+              channel + ":comment:" + r.id + ":" + session.userId)) },
+          },
+        });
+      }
+      // Seeing an own comment also acknowledges the emoji reactions on it.
+      if (parsed.data.reactionIds.length) {
+        await tx.reactionEmoji.updateMany({
+          where: {
+            reactionId: { in: parsed.data.reactionIds },
+            seenAt: null,
+            userId: { not: session.userId },
+            reaction: { authorId: session.userId, question: { roomId: id } },
+          },
+          data: { seenAt: new Date() },
+        });
+      }
       return NextResponse.json({ ok: true });
     });
   } catch (error) {

@@ -6,10 +6,12 @@ import type { PublicQuestion } from "@/types/game";
 
 type Comment = PublicQuestion["reactions"][number];
 
-export default function ReactionComment({ roomId, reaction, isNew, expanded, meId, readOnly, onSeen, onReply, onChanged }: {
+export default function ReactionComment({ roomId, reaction, isNew, newEmojis, expanded, meId, readOnly, onSeen, onReply, onChanged }: {
   roomId: string;
   reaction: Comment;
   isNew: boolean;
+  /** Emojis the other player added to this (own) comment since it was last seen. */
+  newEmojis: string[];
   expanded: boolean;
   meId: string;
   readOnly: boolean;
@@ -22,9 +24,10 @@ export default function ReactionComment({ roomId, reaction, isNew, expanded, meI
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasNews = isNew || newEmojis.length > 0;
   useEffect(() => {
     const node = element.current;
-    if (!node || !isNew || !expanded) return;
+    if (!node || !hasNews || !expanded) return;
     let visible = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const cancel = () => { clearTimeout(timer); timer = undefined; };
@@ -45,7 +48,7 @@ export default function ReactionComment({ roomId, reaction, isNew, expanded, meI
       observer.disconnect();
       document.removeEventListener("visibilitychange", update);
     };
-  }, [expanded, isNew, onSeen, reaction.id]);
+  }, [expanded, hasNews, onSeen, reaction.id]);
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -142,17 +145,25 @@ export default function ReactionComment({ roomId, reaction, isNew, expanded, meI
 
       {reaction.emojis.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
-          {reaction.emojis.map(({ emoji, count, mine }) => (
-            <button key={emoji} type="button" disabled={readOnly || busy}
-              aria-pressed={mine}
-              aria-label={`${emoji} ${count}${mine ? ", von dir – entfernen" : " – hinzufügen"}`}
-              onClick={() => toggleEmoji(emoji, !mine)}
-              className={`h-6 rounded-full border px-1.5 text-xs leading-none disabled:cursor-default ${mine
-                ? "border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-950/50 dark:text-blue-100"
-                : "border-zinc-200 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"}`}>
-              {emoji} {count}
-            </button>
-          ))}
+          {reaction.emojis.map(({ emoji, count, mine }) => {
+            const fresh = newEmojis.includes(emoji);
+            return (
+              <button key={emoji} type="button" disabled={readOnly || busy}
+                aria-pressed={mine}
+                aria-label={`${emoji} ${count}${fresh ? ", neu" : ""}${mine ? ", von dir – entfernen" : " – hinzufügen"}`}
+                onClick={() => toggleEmoji(emoji, !mine)}
+                className={`h-6 rounded-full border px-1.5 text-xs leading-none disabled:cursor-default ${fresh
+                  ? "border-2 border-blue-500 bg-blue-50 text-blue-900 dark:bg-blue-950/50 dark:text-blue-100"
+                  : mine
+                  ? "border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-950/50 dark:text-blue-100"
+                  : "border-zinc-200 text-zinc-600 dark:border-zinc-700 dark:text-zinc-300"}`}>
+                {emoji} {count}
+              </button>
+            );
+          })}
+          {newEmojis.length > 0 && !isNew && (
+            <span className="self-center rounded bg-blue-100 px-1.5 py-0.5 text-xs font-semibold text-blue-800 dark:bg-blue-900 dark:text-blue-100">Neu</span>
+          )}
         </div>
       )}
       {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}

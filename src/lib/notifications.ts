@@ -121,6 +121,21 @@ export async function dispatchNotifications() {
       continue;
     }
 
+    // Comments the recipient has already seen in the app need no message.
+    if (first.kind === "comment") {
+      const reactionIds = jobs.map((job) => job.eventKey.split(":")[2]).filter(Boolean);
+      const read = await prisma.reactionRead.findMany({
+        where: { userId: first.userId, reactionId: { in: reactionIds } },
+        select: { reactionId: true },
+      });
+      const seen = new Set(read.map((r) => r.reactionId));
+      const done = jobs.filter((job) => seen.has(job.eventKey.split(":")[2]));
+      if (done.length) {
+        await prisma.notification.deleteMany({ where: { id: { in: done.map((job) => job.id) } } });
+        if (done.length === jobs.length) continue;
+      }
+    }
+
     const isMember = room && [room.playerAId, room.playerBId].includes(first.userId);
     const stillTheirTurn = room?.playerBId && (
       room.questions.length

@@ -1,5 +1,15 @@
 export const RELEASE_NOTES = [
   {
+    version: "2026.11.06",
+    date: "6. November 2026",
+    title: "Hinweise auf neue Reaktionen",
+    items: [
+      "Reagiert dein Mitspieler mit einem Emoji auf deinen Kommentar, siehst du das wie einen neuen Kommentar.",
+      "Hinweise auf neue Kommentare und Reaktionen verschwinden, sobald du sie gesehen hast.",
+      "Kommentare, die du schon in der App gesehen hast, lösen keine E-Mail oder Push-Nachricht mehr aus.",
+    ],
+  },
+  {
     version: "2026.11.05",
     date: "5. November 2026",
     title: "Gedanke dazu",

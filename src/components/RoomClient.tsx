@@ -40,9 +40,19 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
   const lastSnapshot = useRef<string | null>(null);
   const lastChangeAt = useRef(0);
   const pendingReads = useRef(new Set<string>());
-  const savedReads = useRef(new Set<string>());
+  // Hints already seen here; they stay hidden while the server still reports
+  // them as unread because the receipt is not saved yet.
+  const acknowledged = useRef(new Set<string>());
   const onSeen = useCallback((id: string) => {
-    if (!savedReads.current.has(id)) pendingReads.current.add(id);
+    pendingReads.current.add(id);
+    setHighlighted((previous) => {
+      const next: Record<string, true> = {};
+      for (const key of Object.keys(previous)) {
+        if (key === id || key.startsWith(id + ":")) acknowledged.current.add(key);
+        else next[key] = true;
+      }
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -57,7 +67,7 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
           body: JSON.stringify({ reactionIds: ids }), keepalive: true,
         });
         if (!res.ok) throw new Error("read receipt");
-        for (const id of ids) { savedReads.current.add(id); pendingReads.current.delete(id); }
+        for (const id of ids) pendingReads.current.delete(id);
         setReadError(false);
       } catch { setReadError(true); }
       finally { busy = false; }
@@ -107,11 +117,11 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
       const next: RoomStateResponse = JSON.parse(text);
       const oldest = next.history.at(-1)?.createdAt;
       if (oldest) historySince.current = oldest;
-      setHighlighted((previous) => {
-        const merged = { ...previous };
-        for (const id of next.unreadReactionIds) merged[id] = true;
-        return merged;
-      });
+      const unread = new Set([...next.unreadReactionIds, ...next.unreadEmojiKeys]);
+      for (const key of acknowledged.current) if (!unread.has(key)) acknowledged.current.delete(key);
+      const shown: Record<string, true> = {};
+      for (const key of unread) if (!acknowledged.current.has(key)) shown[key] = true;
+      setHighlighted(shown);
       setState(next);
       setFollowUpTarget((current) => {
         if (!current || !next.isMyTurnToAsk) return null;
@@ -199,9 +209,17 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
     }
   }
 
+  const highlightKeys = Object.keys(highlighted);
+  const newEmojiCount = (commentId: string) => highlightKeys.filter((key) => key.startsWith(commentId + ":")).length;
   const newReactions = state?.history.flatMap((q) => q.reactions
-    .filter((reaction) => highlighted[reaction.id] && reaction.author.id !== state.me.id)
+    .filter((reaction) => (highlighted[reaction.id] && reaction.author.id !== state.me.id) || newEmojiCount(reaction.id) > 0)
     .map((reaction) => ({ id: reaction.id, questionId: q.id }))) ?? [];
+  const newCommentTotal = newReactions.filter((r) => highlighted[r.id]).length;
+  const newEmojiTotal = newReactions.reduce((sum, r) => sum + newEmojiCount(r.id), 0);
+  const newSummary = [
+    newCommentTotal ? `${newCommentTotal} ${newCommentTotal === 1 ? "neuer Kommentar" : "neue Kommentare"}` : "",
+    newEmojiTotal ? `${newEmojiTotal} ${newEmojiTotal === 1 ? "neue Reaktion" : "neue Reaktionen"}` : "",
+  ].filter(Boolean).join(" · ");
   function startFollowUp(question: { id: string; text: string }) {
     setFollowUpTarget(question);
     requestAnimationFrame(() => {
@@ -263,7 +281,7 @@ function RoomContent({ roomId, origin }: { roomId: string; origin: string }) {
 
       {newReactions.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:bg-blue-950/40 dark:text-blue-100">
-          <span>{newReactions.length} {newReactions.length === 1 ? "neuer Kommentar" : "neue Kommentare"}</span>
+          <span>{newSummary}</span>
           <button type="button" onClick={showNextReaction} className="min-h-10 rounded px-2 font-semibold underline focus-visible:outline-2">
             {jump ? "Nächsten anzeigen" : "Anzeigen"}
           </button>

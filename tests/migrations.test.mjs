@@ -15,13 +15,13 @@ const oldMigrations = [
   "20261014000000_account_recovery",
 ];
 
-async function installOld(url, count = 6) {
+async function installOld(url, count = 6, migrations = oldMigrations) {
   const dir = await mkdtemp(join(tmpdir(), "qanda-migrations-"));
   try {
     await mkdir(join(dir, "migrations"));
     await cp("prisma/schema.prisma", join(dir, "schema.prisma"));
     await cp("prisma/migrations/migration_lock.toml", join(dir, "migrations/migration_lock.toml"));
-    for (const name of oldMigrations.slice(0, count)) {
+    for (const name of migrations.slice(0, count)) {
       await cp("prisma/migrations/" + name, join(dir, "migrations", name), { recursive: true });
     }
     succeeded(command([prismaCli, "migrate", "deploy", "--schema", join(dir, "schema.prisma")], url));
@@ -141,9 +141,6 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     // Existing rounds have no hidden notes.
     assert.equal((await db.question.findUnique({ where: { id: question.id } })).askerNote, null);
     assert.equal(await db.answer.count({ where: { note: { not: null } } }), 0);
-    // Existing rounds have no hidden notes.
-    assert.equal((await db.question.findUnique({ where: { id: question.id } })).askerNote, null);
-    assert.equal(await db.answer.count({ where: { note: { not: null } } }), 0);
     assert.equal(await db.reactionEmoji.count(), 0);
     assert.equal(await db.questionDraft.count(), 0);
     const reply = await db.reaction.create({ data: {
@@ -157,6 +154,25 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
     assert.deepEqual((await snapshot()).reaction.filter((r) => r.id !== reply.id), before.reaction);
     assert.equal(await db.reactionEmoji.count(), 1);
     assert.equal(await db.questionDraft.count(), 1);
+  } finally { await ctx.close(); }
+});
+
+test("existing emoji reactions count as seen after the upgrade", async () => {
+  const ctx = await isolatedDatabase();
+  try {
+    const { readdir } = await import("node:fs/promises");
+    const all = (await readdir("prisma/migrations")).filter((name) => /^\d/.test(name)).sort();
+    const before = all.slice(0, all.indexOf("20261106000000_emoji_seen"));
+    await installOld(ctx.url, before.length, before);
+    await ctx.db.$executeRaw`INSERT INTO "User" ("id", "username", "passwordHash") VALUES ('ea', 'ea', 'x'), ('eb', 'eb', 'x')`;
+    await ctx.db.$executeRaw`INSERT INTO "Room" ("id", "inviteCode", "playerAId", "playerBId", "currentAskerId") VALUES ('er', 'EMOJIROOM', 'ea', 'eb', 'ea')`;
+    await ctx.db.$executeRaw`INSERT INTO "Question" ("id", "roomId", "askerId", "type", "text", "askerAnswer", "status") VALUES ('eq', 'er', 'ea', 'TEXT', 'F', 'A', 'ANSWERED')`;
+    await ctx.db.$executeRaw`INSERT INTO "Reaction" ("id", "questionId", "authorId", "text") VALUES ('ec', 'eq', 'ea', 'Kommentar')`;
+    await ctx.db.$executeRaw`INSERT INTO "ReactionEmoji" ("reactionId", "userId", "emoji") VALUES ('ec', 'eb', '👍')`;
+    succeeded(command(["scripts/migrate-deploy.mjs"], ctx.url));
+    const [emoji] = await ctx.db.reactionEmoji.findMany();
+    assert.equal(emoji.emoji, "👍");
+    assert.equal(emoji.seenAt.getTime(), emoji.createdAt.getTime());
   } finally { await ctx.close(); }
 });
 

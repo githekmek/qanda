@@ -184,6 +184,9 @@ export default function HistoryFeed({
   onFollowUp: (question: { id: string; text: string }) => void;
 }) {
   const [replyTargets, setReplyTargets] = useState<Record<string, Comment | null>>({});
+  const newEmojisOf = (commentId: string) => Object.keys(highlighted)
+    .filter((key) => key.startsWith(commentId + ":"))
+    .map((key) => key.slice(commentId.length + 1));
   useEffect(() => {
     if (!jump) return;
     const element = document.getElementById(`reaction-${jump.id}`);
@@ -202,7 +205,8 @@ export default function HistoryFeed({
     <div className="flex flex-col gap-4">
       {history.map((q) => {
         const newCount = q.reactions.filter((r) => highlighted[r.id] && r.author.id !== meId).length;
-        const open = expanded[q.id] ?? newCount > 0;
+        const newEmojiCount = q.reactions.reduce((sum, r) => sum + newEmojisOf(r.id).length, 0);
+        const open = expanded[q.id] ?? (newCount > 0 || newEmojiCount > 0);
         const askerAnswers = answerLabels(q.type, q.options, q.askerAnswer);
         const responderAnswers = answerLabels(q.type, q.options, q.answer?.value);
 
@@ -263,12 +267,14 @@ export default function HistoryFeed({
               <span aria-hidden="true">{open ? "▾" : "▸"}</span>
               {q.reactions.length ? `Kommentare (${q.reactions.length})` : readOnly ? "Kommentare (0)" : "Kommentar schreiben"}
               {newCount > 0 && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-100">{newCount} neu</span>}
+              {newEmojiCount > 0 && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800 dark:bg-blue-900 dark:text-blue-100">{newEmojiCount} {newEmojiCount === 1 ? "Reaktion" : "Reaktionen"}</span>}
             </button>
             <div id={`comments-${q.id}`} hidden={!open}>
               <div className="flex flex-col gap-2">
                 {q.reactions.map((reaction) => (
                   <ReactionComment key={reaction.id} roomId={roomId} reaction={reaction}
                     isNew={Boolean(highlighted[reaction.id]) && reaction.author.id !== meId}
+                    newEmojis={newEmojisOf(reaction.id)}
                     expanded={open} meId={meId} readOnly={readOnly} onSeen={onSeen}
                     onReply={(target) => setReplyTargets((previous) => ({ ...previous, [q.id]: target }))}
                     onChanged={onReacted} />
