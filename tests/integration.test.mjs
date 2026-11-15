@@ -378,8 +378,10 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
       await pa.getByRole("button", { name: "Option 2 nach oben" }).click();
       assert.equal(await pa.getByRole("textbox", { name: "Option 1", exact: true }).inputValue(), "Schwimmen");
       assert.equal(await pa.getByRole("textbox", { name: "Option 2", exact: true }).inputValue(), "Golf");
-      assert.equal(await pa.evaluate(() => document.activeElement?.id), "ask-rank-up-0");
-      await pa.getByRole("button", { name: "Option 1 nach oben" }).click(); // already first: no change
+      // Focus moves on the next frame.
+      await pa.waitForFunction(() => document.activeElement?.id === "ask-rank-up-0", null, { timeout: 2000 });
+      assert.equal(await pa.getByRole("button", { name: "Option 1 nach oben" }).getAttribute("aria-disabled"), "true");
+      await pa.getByRole("button", { name: "Option 1 nach oben" }).click({ force: true }); // already first: no change
       assert.equal(await pa.getByRole("textbox", { name: "Option 1", exact: true }).inputValue(), "Schwimmen");
       assert.equal(await pa.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
       const posted = pa.waitForResponse((res) => res.url().endsWith("/ask") && res.request().method() === "POST");
