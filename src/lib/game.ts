@@ -10,7 +10,7 @@ export const MAX_QUOTE_LENGTH = 160;
 
 export type PublicQuestion = {
   id: string;
-  type: "MULTIPLE_CHOICE" | "MULTIPLE_SELECT" | "TEXT";
+  type: "MULTIPLE_CHOICE" | "MULTIPLE_SELECT" | "RANKING" | "TEXT";
   text: string;
   options: string[] | null;
   status: "PENDING" | "ANSWERED";

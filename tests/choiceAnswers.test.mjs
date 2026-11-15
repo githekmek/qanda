@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { selectedPositions, parseMultipleAnswer, answersMatch, answerLabels, matchingAnswerPositions } from "../src/lib/choiceAnswers.mjs";
+import { parseRankingAnswer, samePlaces, selectedPositions, parseMultipleAnswer, answersMatch, answerLabels, matchingAnswerPositions } from "../src/lib/choiceAnswers.mjs";
 
 test("multiple answers require unique integer indices within the available options", () => {
   assert.deepEqual(parseMultipleAnswer("[4,0,2]", 5), [0,2,4]);
@@ -50,4 +50,18 @@ test("selected positions cover single, multiple and free-text answers", () => {
   assert.deepEqual(selectedPositions("MULTIPLE_SELECT", "kaputt", 4), []);
   assert.deepEqual(selectedPositions("TEXT", "Freitext", 0), []);
   assert.deepEqual(selectedPositions("MULTIPLE_CHOICE", undefined, 4), []);
+});
+
+test("rankings list every option exactly once and match only in identical order", () => {
+  assert.deepEqual(parseRankingAnswer("[2,0,1]", 3), [2, 0, 1]);
+  for (const value of ["[0,1]", "[0,0,1]", "[0,1,3]", '["0",1,2]', "[0.5,1,2]", "{}", "kaputt", "[]"]) {
+    assert.equal(parseRankingAnswer(value, 3), null, value);
+  }
+  assert.equal(answersMatch("RANKING", "[2,0,1]", "[2,0,1]", 3), true);
+  assert.equal(answersMatch("RANKING", "[2,0,1]", "[2,1,0]", 3), false);
+  assert.equal(answersMatch("RANKING", "[0,0,1]", "[0,0,1]", 3), false);
+  assert.deepEqual(answerLabels("RANKING", ["Golf", "Ski", "Schwimmen"], "[2,0,1]"), ["Schwimmen", "Golf", "Ski"]);
+  assert.deepEqual(samePlaces("[2,0,1]", "[1,0,2]", 3), [false, true, false]);
+  assert.deepEqual(samePlaces("[2,0,1]", undefined, 3), [false, false, false]);
+  assert.deepEqual(selectedPositions("RANKING", "[2,0,1]", 3), [0, 1, 2]);
 });

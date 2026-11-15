@@ -11,7 +11,15 @@ import {
 
 import { MAX_OPTION_LENGTH, MAX_OPTIONS, MIN_OPTIONS } from "@/lib/questionLimits";
 import NoteField from "./NoteField";
+import MoveButtons from "./MoveButtons";
 const MAX_TEXT_LENGTH = 255;
+
+type AnswerMode = "single" | "multiple" | "ranking";
+const MODE_LABELS: Record<AnswerMode, string> = {
+  single: "Eine Antwort",
+  multiple: "Mehrere Antworten",
+  ranking: "Reihenfolge",
+};
 
 // Only the selected state carries colour; unselected stays grey, so the two are
 // told apart by the checkbox, the tint and the text colour at once.
@@ -118,7 +126,9 @@ export default function AskForm({
   const [categories, setCategories] = useState<QuestionCategory[]>([...CATEGORIES]);
   const [text, setText] = useState("");
   const [options, setOptions] = useState<string[]>(["", ""]);
-  const [multiple, setMultiple] = useState(false);
+  const [mode, setMode] = useState<AnswerMode>("single");
+  const multiple = mode === "multiple";
+  const ranking = mode === "ranking";
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [freeTextAnswer, setFreeTextAnswer] = useState("");
@@ -153,7 +163,7 @@ export default function AskForm({
   function loadDraft(draft: QuestionDraft) {
     const selection = draftSelection(draft);
     setType(draft.type === "TEXT" ? "TEXT" : "MULTIPLE_CHOICE");
-    setMultiple(draft.type === "MULTIPLE_SELECT");
+    setMode(draft.type === "MULTIPLE_SELECT" ? "multiple" : draft.type === "RANKING" ? "ranking" : "single");
     setText(draft.text);
     const loaded = draft.options ?? [];
     setOptions(loaded.length >= MIN_OPTIONS ? loaded : [...loaded, ...Array(MIN_OPTIONS - loaded.length).fill("")]);
@@ -176,12 +186,14 @@ export default function AskForm({
       setError("Bitte zuerst eine Frage eingeben");
       return;
     }
-    const draftType = type === "MULTIPLE_CHOICE" && multiple ? "MULTIPLE_SELECT" : type;
+    const draftType = choiceType();
     const payload = {
       type: draftType,
       text: text.trim(),
       options: type === "MULTIPLE_CHOICE" ? options.map((o) => o.trim()) : undefined,
+      // A ranking draft keeps the order in its options list.
       askerAnswer: draftType === "TEXT" ? freeTextAnswer.trim()
+        : draftType === "RANKING" ? JSON.stringify(options.map((_, index) => index))
         : draftType === "MULTIPLE_SELECT" ? (selectedOptions.length ? JSON.stringify([...selectedOptions].sort((a, b) => a - b)) : "")
         : selectedOption === null ? "" : String(selectedOption),
       askerNote: note.trim(),
@@ -244,6 +256,18 @@ export default function AskForm({
     setOptions((prev) => (prev.length < MAX_OPTIONS ? [...prev, ""] : prev));
   }
 
+  function choiceType(): QuestionType {
+    if (type !== "MULTIPLE_CHOICE") return type;
+    return multiple ? "MULTIPLE_SELECT" : ranking ? "RANKING" : "MULTIPLE_CHOICE";
+  }
+
+  function moveOption(from: number, to: number) {
+    const swap = (i: number) => (i === from ? to : i === to ? from : i);
+    setOptions((prev) => prev.map((_, i) => prev[swap(i)]));
+    setSelectedOptions((prev) => prev.map(swap));
+    setSelectedOption((prev) => (prev === null ? null : swap(prev)));
+  }
+
   function removeOption(index: number) {
     setOptions((prev) => prev.filter((_, i) => i !== index));
     setSelectedOptions((prev) => prev.filter((i) => i !== index).map((i) => i > index ? i - 1 : i));
@@ -268,11 +292,13 @@ export default function AskForm({
         setError("Bitte alle Optionen ausfüllen");
         return;
       }
-      if (multiple ? selectedOptions.length === 0 : selectedOption === null) {
+      if (!ranking && (multiple ? selectedOptions.length === 0 : selectedOption === null)) {
         setError("Bitte deine eigene Antwort auswählen");
         return;
       }
-      askerAnswer = multiple ? JSON.stringify([...selectedOptions].sort((a, b) => a - b)) : String(selectedOption);
+      // For a ranking the list order is the asker's own answer.
+      askerAnswer = ranking ? JSON.stringify(options.map((_, index) => index))
+        : multiple ? JSON.stringify([...selectedOptions].sort((a, b) => a - b)) : String(selectedOption);
     } else {
       if (!freeTextAnswer.trim()) {
         setError("Bitte deine eigene Antwort eingeben");
@@ -287,7 +313,7 @@ export default function AskForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: type === "MULTIPLE_CHOICE" && multiple ? "MULTIPLE_SELECT" : type,
+          type: choiceType(),
           text: text.trim(),
           options: type === "MULTIPLE_CHOICE" ? trimmedOptions : undefined,
           askerAnswer,
@@ -397,11 +423,11 @@ export default function AskForm({
       {type === "MULTIPLE_CHOICE" && (
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Antwortmodus</legend>
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
-            {[false, true].map((mode) => (
-              <label key={String(mode)} className={`relative cursor-pointer rounded-md px-2 py-2 text-center text-sm font-medium focus-within:ring-2 focus-within:ring-zinc-400 ${multiple === mode ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-500"}`}>
-                <input className="absolute inset-0 h-full w-full cursor-pointer opacity-0" type="radio" name="answer-mode" checked={multiple === mode} onChange={() => { setMultiple(mode); setError(null); }} />
-                {mode ? "Mehrere Antworten" : "Eine Antwort"}
+          <div className="grid grid-cols-3 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-900">
+            {(["single", "multiple", "ranking"] as const).map((value) => (
+              <label key={value} className={`relative flex cursor-pointer items-center justify-center rounded-md px-1 py-2 text-center text-sm font-medium leading-tight focus-within:ring-2 focus-within:ring-zinc-400 ${mode === value ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-500"}`}>
+                <input className="absolute inset-0 h-full w-full cursor-pointer opacity-0" type="radio" name="answer-mode" checked={mode === value} onChange={() => { setMode(value); setError(null); }} />
+                {MODE_LABELS[value]}
               </label>
             ))}
           </div>
@@ -433,12 +459,18 @@ export default function AskForm({
       {type === "MULTIPLE_CHOICE" ? (
         <div className="flex flex-col gap-2">
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Optionen (max. {MAX_OPTIONS}) – {multiple ? "wähle deine eigenen Antworten" : "wähle auch deine eigene Antwort"}
+            Optionen (max. {MAX_OPTIONS}) – {ranking ? "in deiner Reihenfolge" : multiple ? "wähle deine eigenen Antworten" : "wähle auch deine eigene Antwort"}
           </span>
-          <p className="text-xs text-zinc-500">{multiple ? "Wähle eine oder mehrere Antworten." : "Wähle genau eine Antwort."}</p>
+          <p className="text-xs text-zinc-500">
+            {ranking
+              ? "Oben steht, was dir am besten gefällt. Mit ↑ und ↓ verschieben. Dein Mitspieler bekommt die Optionen gemischt."
+              : multiple ? "Wähle eine oder mehrere Antworten." : "Wähle genau eine Antwort."}
+          </p>
           {options.map((option, index) => (
             <div key={index} className="flex items-start gap-2">
-              <input
+              {ranking ? (
+                <span className="mt-1.5 w-5 shrink-0 text-right text-sm font-semibold text-zinc-600 dark:text-zinc-300">{index + 1}.</span>
+              ) : <input
                 type={multiple ? "checkbox" : "radio"}
                 name="asker-answer"
                 className="mt-2 h-4 w-4 shrink-0 accent-zinc-900 dark:accent-zinc-100"
@@ -447,8 +479,12 @@ export default function AskForm({
                   ? setSelectedOptions((prev) => prev.includes(index) ? prev.filter((i) => i !== index) : [...prev, index])
                   : setSelectedOption(index)}
                 aria-label={`Option ${index + 1} als eigene Antwort auswählen`}
-              />
+              />}
               <OptionField index={index} value={option} onChange={(value) => updateOption(index, value)} />
+              {ranking && (
+                <MoveButtons idPrefix="ask-rank" index={index} count={options.length}
+                  label={`Option ${index + 1}`} onMove={moveOption} />
+              )}
               {options.length > MIN_OPTIONS && (
                 <button
                   type="button"

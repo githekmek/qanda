@@ -303,6 +303,120 @@ test("security and compatibility against real PostgreSQL and HTTP routes", { tim
     assert.equal(different.body.isMatch, false);
   });
 
+  await t.test("rankings are stored shuffled, stay private and mark identical places", async () => {
+    const a = await user(), b = await user(), r = await room(a, b);
+    const path = "/api/rooms/" + r.id;
+    const sports = ["Schwimmen", "Golf", "Skifahren", "Tennis", "Laufen", "Radfahren", "Klettern", "Yoga"];
+    for (const askerAnswer of ["[0,1]", "[0,0,1,2,3,4,5,6]", "[0,1,2,3,4,5,6,8]", "0", "[]"]) {
+      assert.equal((await request(path + "/ask", { actor: a, data: { type: "RANKING", text: "Invalid", options: sports, askerAnswer } })).status, 400, askerAnswer);
+    }
+    assert.equal(await db.question.count({ where: { roomId: r.id } }), 0);
+
+    // The asker submits options in their own order, best first.
+    const asked = await request(path + "/ask", { actor: a, data: { type: "RANKING", text: "Lieblingssport?", options: sports, askerAnswer: "[0,1,2,3,4,5,6,7]" } });
+    assert.equal(asked.status, 200, JSON.stringify(asked.body));
+    const stored = await db.question.findUnique({ where: { id: asked.body.id } });
+    const storedOptions = JSON.parse(stored.options);
+    assert.deepEqual([...storedOptions].sort(), [...sports].sort());
+    assert.deepEqual(JSON.parse(stored.askerAnswer).map((index) => storedOptions[index]), sports, "the asker's order survives the shuffle");
+
+    const pending = (await request(path + "/state", { actor: b, method: "GET" })).body.pendingQuestion;
+    assert.equal(pending.type, "RANKING");
+    assert.deepEqual(pending.options, storedOptions);
+    assert.equal(pending.askerAnswer, undefined);
+
+    for (const value of ["[0,1,2]", "[0,0,1,2,3,4,5,6]", "[1,2,3,4,5,6,7,8]", "0", "[]", "{}"]) {
+      assert.equal((await request(path + "/answer", { actor: b, data: { questionId: asked.body.id, value } })).status, 400, value);
+    }
+    assert.equal(await db.answer.count({ where: { questionId: asked.body.id } }), 0);
+
+    // Same first and last place, everything in between swapped.
+    const mine = [...sports.slice(0, 1), ...sports.slice(1, 7).reverse(), sports[7]];
+    const value = JSON.stringify(mine.map((option) => storedOptions.indexOf(option)));
+    const answered = await request(path + "/answer", { actor: b, data: { questionId: asked.body.id, value } });
+    assert.equal(answered.status, 200);
+    assert.equal(answered.body.isMatch, false);
+    assert.equal(answered.body.answer.value, value);
+
+    const same = await request(path + "/ask", { actor: b, data: { type: "RANKING", text: "Nochmal", options: ["A", "B"], askerAnswer: "[1,0]" } });
+    assert.equal(same.status, 200);
+    const sameStored = JSON.parse((await db.question.findUnique({ where: { id: same.body.id } })).options);
+    const agree = JSON.stringify(["B", "A"].map((option) => sameStored.indexOf(option)));
+    assert.equal((await request(path + "/answer", { actor: a, data: { questionId: same.body.id, value: agree } })).body.isMatch, true);
+
+    // Drafts keep a ranking in the order of their options.
+    const draft = await request(path + "/drafts", { actor: b, data: { type: "RANKING", text: "Später", options: ["X", "Y"], askerAnswer: "[0,1]" } });
+    assert.equal(draft.status, 200);
+    assert.equal(draft.body.type, "RANKING");
+    assert.deepEqual(draft.body.options, ["X", "Y"]);
+  });
+
+  await t.test("browser: ranking with arrows for asker and responder", { skip: !process.env.QANDA_BROWSER_TESTS }, async () => {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch();
+    try {
+      const a = await user(), b = await user(), r = await room(a, b);
+      const ca = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      const cb = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await ca.addCookies([{ name: "qanda_session", value: (await cookie(a)).slice("qanda_session=".length), url: servers[0].origin }]);
+      await cb.addCookies([{ name: "qanda_session", value: (await cookie(b)).slice("qanda_session=".length), url: servers[0].origin }]);
+      const pa = await ca.newPage(), pb = await cb.newPage();
+      const errors = [];
+      pa.on("pageerror", (e) => errors.push(e.message));
+      pb.on("pageerror", (e) => errors.push(e.message));
+
+      await pa.goto(servers[0].origin + "/room/" + r.id);
+      await pa.getByRole("button", { name: "Multiple Choice", exact: true }).click();
+      await pa.getByRole("radio", { name: "Reihenfolge", exact: true }).check();
+      await pa.getByLabel("Deine Frage", { exact: true }).fill("Welche Sportart gefällt dir am besten?");
+      await pa.getByRole("textbox", { name: "Option 1", exact: true }).fill("Golf");
+      await pa.getByRole("textbox", { name: "Option 2", exact: true }).fill("Schwimmen");
+      await pa.getByRole("button", { name: "+ Option hinzufügen", exact: true }).click();
+      await pa.getByRole("textbox", { name: "Option 3", exact: true }).fill("Skifahren");
+      assert.equal(await pa.getByRole("radio", { name: /als eigene Antwort/ }).count(), 0);
+      // Swimming up to first place; focus follows the moved option.
+      await pa.getByRole("button", { name: "Option 2 nach oben" }).click();
+      assert.equal(await pa.getByRole("textbox", { name: "Option 1", exact: true }).inputValue(), "Schwimmen");
+      assert.equal(await pa.getByRole("textbox", { name: "Option 2", exact: true }).inputValue(), "Golf");
+      assert.equal(await pa.evaluate(() => document.activeElement?.id), "ask-rank-up-0");
+      await pa.getByRole("button", { name: "Option 1 nach oben" }).click(); // already first: no change
+      assert.equal(await pa.getByRole("textbox", { name: "Option 1", exact: true }).inputValue(), "Schwimmen");
+      assert.equal(await pa.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      const posted = pa.waitForResponse((res) => res.url().endsWith("/ask") && res.request().method() === "POST");
+      await pa.getByRole("button", { name: "Frage stellen", exact: true }).click();
+      assert.equal((await posted).status(), 200);
+      const q = await db.question.findFirst({ where: { roomId: r.id, status: "PENDING" } });
+      assert.equal(q.type, "RANKING");
+      const stored = JSON.parse(q.options);
+      assert.deepEqual(JSON.parse(q.askerAnswer).map((i) => stored[i]), ["Schwimmen", "Golf", "Skifahren"]);
+
+      // The responder starts from the stored (shuffled) order and moves Skifahren to the top.
+      await pb.goto(servers[0].origin + "/room/" + r.id);
+      await pb.getByText("Bring die Antworten in deine Reihenfolge", { exact: false }).waitFor();
+      const items = pb.locator("ol li");
+      assert.deepEqual(await items.allInnerTexts().then((t) => t.map((x) => x.replace(/^\d+\.\s*/, "").replace(/[↑↓]/g, "").trim())), stored);
+      for (let place = stored.indexOf("Skifahren"); place > 0; place--) {
+        await pb.getByRole("button", { name: "Skifahren nach oben" }).click();
+      }
+      if ((await items.nth(1).innerText()).includes("Schwimmen")) {
+        await pb.getByRole("button", { name: "Schwimmen nach unten" }).click();
+      }
+      const answered = pb.waitForResponse((res) => res.url().endsWith("/answer") && res.request().method() === "POST");
+      await pb.getByRole("button", { name: "Reihenfolge abschicken", exact: true }).click();
+      assert.equal((await answered).status(), 200);
+      const answer = await db.answer.findFirst({ where: { questionId: q.id } });
+      assert.deepEqual(JSON.parse(answer.value).map((i) => stored[i]), ["Skifahren", "Golf", "Schwimmen"]);
+
+      // History: numbered lists, ✓ only for Golf on second place.
+      await pb.getByText("Multiple Choice · Reihenfolge", { exact: false }).waitFor();
+      assert.equal(await pb.getByLabel("Gleicher Platz", { exact: true }).count(), 2);
+      assert.equal(await pb.getByText("✓ gleich", { exact: true }).count(), 0);
+      assert.equal(await pb.getByRole("button", { name: /Alle Antwortmöglichkeiten/ }).count(), 0);
+      assert.equal(await pb.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+      assert.deepEqual(errors, []);
+    } finally { await browser.close(); }
+  });
+
   await t.test("invalid multi-select questions do not write data", async () => {
     const a = await user(), b = await user(), r = await room(a, b);
     for (const askerAnswer of ["[]", "[0,0]", "[2]", "1", "null", "[false]", "[0.5]", '["0"]']) {

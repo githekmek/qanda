@@ -1,7 +1,8 @@
 import { enqueueNotification, dispatchNotifications } from "@/lib/notifications";
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
-import { parseMultipleAnswer } from "@/lib/choiceAnswers.mjs";
+import { randomInt } from "node:crypto";
+import { parseMultipleAnswer, parseRankingAnswer } from "@/lib/choiceAnswers.mjs";
 import { getSession } from "@/lib/auth";
 import { serializable, mutationError } from "@/lib/transaction";
 import { findRoomForMember } from "@/lib/rooms";
@@ -19,7 +20,7 @@ export const maxDuration = 60;
 
 const askSchema = z
   .object({
-    type: z.enum(["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TEXT"]),
+    type: z.enum(["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "RANKING", "TEXT"]),
     text: z.string().trim().min(1, "Frage darf nicht leer sein").max(MAX_TEXT_LENGTH),
     options: z
       .array(z.string().trim().min(1).max(MAX_OPTION_LENGTH))
@@ -36,6 +37,12 @@ const askSchema = z
     if (data.type !== "TEXT") {
       if (!data.options) {
         ctx.addIssue({ code: "custom", message: "Multiple-Choice-Fragen benötigen Optionen" });
+        return;
+      }
+      if (data.type === "RANKING") {
+        if (!parseRankingAnswer(data.askerAnswer, data.options.length)) {
+          ctx.addIssue({ code: "custom", message: "Bitte alle Optionen in eine Reihenfolge bringen" });
+        }
         return;
       }
       if (data.type === "MULTIPLE_SELECT") {
@@ -112,15 +119,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
       }
 
+      // A ranking is stored with shuffled options, so neither the stored order nor
+      // the order the responder starts from gives away the asker's preference.
+      let storedOptions = options;
+      let storedAnswer = type === "MULTIPLE_SELECT"
+        ? JSON.stringify(parseMultipleAnswer(askerAnswer, options!.length))
+        : askerAnswer;
+      if (type === "RANKING") {
+        const shuffled = options!.map((_, index) => index);
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = randomInt(i + 1);
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        storedOptions = shuffled.map((index) => options![index]);
+        const placeOf = new Map(shuffled.map((original, stored) => [original, stored]));
+        storedAnswer = JSON.stringify(parseRankingAnswer(askerAnswer, options!.length)!.map((index) => placeOf.get(index)));
+      }
+
       const question = await tx.question.create({
         data: {
           roomId: room.id,
           type,
           text,
-          options: type !== "TEXT" ? JSON.stringify(options) : null,
-          askerAnswer: type === "MULTIPLE_SELECT"
-            ? JSON.stringify(parseMultipleAnswer(askerAnswer, options!.length))
-            : askerAnswer,
+          options: type !== "TEXT" ? JSON.stringify(storedOptions) : null,
+          askerAnswer: storedAnswer,
           askerNote,
           askerId: session.userId,
           parentQuestionId: parentQuestionId ?? null,

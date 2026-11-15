@@ -8,7 +8,7 @@ export const MAX_DRAFTS_PER_ROOM = 50;
 
 // Drafts may be incomplete: options and the own answer can still be empty.
 export const draftSchema = z.object({
-  type: z.enum(["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "TEXT"]),
+  type: z.enum(["MULTIPLE_CHOICE", "MULTIPLE_SELECT", "RANKING", "TEXT"]),
   text: z.string().trim().min(1, "Bitte zuerst eine Frage eingeben").max(MAX_TEXT_LENGTH),
   options: z.array(z.string().max(MAX_OPTION_LENGTH)).max(MAX_OPTIONS).optional(),
   askerAnswer: z.string().max(MAX_TEXT_LENGTH).default(""),

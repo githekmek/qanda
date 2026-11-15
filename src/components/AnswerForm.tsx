@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { PublicQuestion } from "@/types/game";
 import NoteField from "./NoteField";
+import MoveButtons from "./MoveButtons";
 
 const MAX_TEXT_LENGTH = 255;
 
@@ -16,7 +17,10 @@ export default function AnswerForm({
   onSubmitted: () => void;
 }) {
   const multiple = question.type === "MULTIPLE_SELECT";
+  const ranking = question.type === "RANKING";
   const choice = question.type !== "TEXT";
+  // Options arrive already shuffled for rankings; this is the responder's order.
+  const [order, setOrder] = useState<number[]>(() => (question.options ?? []).map((_, index) => index));
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [textAnswer, setTextAnswer] = useState("");
@@ -29,7 +33,9 @@ export default function AnswerForm({
     setError(null);
 
     let value: string;
-    if (choice) {
+    if (ranking) {
+      value = JSON.stringify(order);
+    } else if (choice) {
       if (multiple ? selectedOptions.length === 0 : selectedOption === null) {
         setError("Bitte eine Option auswählen");
         return;
@@ -80,10 +86,27 @@ export default function AnswerForm({
           Folgefrage zu: <span className="font-medium">{question.parentQuestion.text}</span>
         </p>
       )}
-      {choice && <span className="self-start rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">{multiple ? "Mehrere Antworten" : "Eine Antwort"}</span>}
+      {choice && <span className="self-start rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">{ranking ? "Reihenfolge" : multiple ? "Mehrere Antworten" : "Eine Antwort"}</span>}
       <p className="text-base">{question.text}</p>
 
-      {choice && question.options ? (
+      {ranking && question.options ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-zinc-500">Bring die Antworten in deine Reihenfolge – oben steht, was dir am besten gefällt.</p>
+          <ol className="flex flex-col gap-2">
+            {order.map((optionIndex, place) => (
+              <li key={optionIndex} className="flex items-center gap-2">
+                <span className="w-5 shrink-0 text-right text-sm font-semibold text-zinc-600 dark:text-zinc-300">{place + 1}.</span>
+                <span className="min-w-0 flex-1 whitespace-pre-line break-words rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800">
+                  {question.options![optionIndex]}
+                </span>
+                <MoveButtons idPrefix="answer-rank" index={place} count={order.length}
+                  label={question.options![optionIndex]}
+                  onMove={(from, to) => setOrder((prev) => prev.map((value, i) => (i === from ? prev[to] : i === to ? prev[from] : value)))} />
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : choice && question.options ? (
         <div className="flex flex-col gap-2">
           <p className="text-sm text-zinc-500">{multiple ? "Wähle eine oder mehrere Antworten." : "Wähle genau eine Antwort."}</p>
           {question.options.map((option, index) => (
@@ -126,7 +149,7 @@ export default function AnswerForm({
 
       {multiple && <p className="text-xs text-zinc-500" aria-live="polite">{selectedOptions.length} {selectedOptions.length === 1 ? "Antwort ausgewählt" : "Antworten ausgewählt"}</p>}
       <p className="text-xs text-zinc-400">
-        {multiple ? "Die Antworten" : "Die Antwort"} von {question.asker.username} siehst du, sobald du selbst geantwortet hast.
+        {ranking ? "Die Reihenfolge" : multiple ? "Die Antworten" : "Die Antwort"} von {question.asker.username} siehst du, sobald du selbst geantwortet hast.
       </p>
 
       <NoteField id="answer-note" value={note} onChange={setNote} hint="Erst sichtbar, wenn beide geantwortet haben." />
@@ -138,7 +161,7 @@ export default function AnswerForm({
         disabled={loading}
         className="rounded-lg bg-zinc-900 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
       >
-        {loading ? "Wird gesendet…" : multiple ? "Antworten abschicken" : "Antwort abschicken"}
+        {loading ? "Wird gesendet…" : ranking ? "Reihenfolge abschicken" : multiple ? "Antworten abschicken" : "Antwort abschicken"}
       </button>
     </form>
   );

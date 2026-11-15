@@ -1,5 +1,14 @@
 export const RELEASE_NOTES = [
   {
+    version: "2026.11.15",
+    date: "15. November 2026",
+    title: "Reihenfolge",
+    items: [
+      "Multiple-Choice-Fragen haben einen dritten Antwortmodus: Beide bringen die Optionen mit ↑ und ↓ in ihre Reihenfolge.",
+      "Der Mitspieler bekommt die Optionen gemischt. Im Verlauf markiert ✓ jede Option auf demselben Platz.",
+    ],
+  },
+  {
     version: "2026.11.06",
     date: "6. November 2026",
     title: "Hinweise auf neue Reaktionen",

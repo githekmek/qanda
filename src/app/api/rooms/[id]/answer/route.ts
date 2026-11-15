@@ -1,7 +1,7 @@
 import { enqueueNotification, dispatchNotifications } from "@/lib/notifications";
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
-import { parseMultipleAnswer } from "@/lib/choiceAnswers.mjs";
+import { parseMultipleAnswer, parseRankingAnswer } from "@/lib/choiceAnswers.mjs";
 import { getSession } from "@/lib/auth";
 import { serializable, mutationError } from "@/lib/transaction";
 import { findRoomForMember } from "@/lib/rooms";
@@ -67,6 +67,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           return NextResponse.json({ error: "Bitte mindestens eine gültige Antwortoption ohne Duplikate auswählen" }, { status: 400 });
         }
         storedValue = JSON.stringify(indices);
+      }
+      if (question.type === "RANKING") {
+        const options: string[] = question.options ? JSON.parse(question.options) : [];
+        const order = parseRankingAnswer(value, options.length);
+        if (!order) {
+          return NextResponse.json({ error: "Bitte alle Optionen in eine Reihenfolge bringen" }, { status: 400 });
+        }
+        storedValue = JSON.stringify(order);
       }
       if (question.type === "MULTIPLE_CHOICE") {
         const options: string[] = question.options ? JSON.parse(question.options) : [];

@@ -10,6 +10,7 @@ datasource db {
 enum QuestionType {
   MULTIPLE_CHOICE
   MULTIPLE_SELECT
+  RANKING
   TEXT
 }
 
@@ -91,7 +92,7 @@ model Question {
   type        QuestionType
   text        String
   options     String? // JSON-encoded array of up to 8 strings, for choice questions
-  askerAnswer String // asker's own answer: option index, JSON index array for MULTIPLE_SELECT, or free text
+  askerAnswer String // asker's own answer: option index, JSON index array for MULTIPLE_SELECT, JSON order for RANKING, or free text
   // Optional thought written before the reveal; hidden from the responder like askerAnswer.
   askerNote   String?
   status      QuestionStatus @default(PENDING)
@@ -113,7 +114,7 @@ model Question {
 
 model Answer {
   id        String   @id @default(cuid())
-  value     String // responder's answer: option index, JSON index array for MULTIPLE_SELECT, or free text
+  value     String // responder's answer: option index, JSON index array for MULTIPLE_SELECT, JSON order for RANKING, or free text
   // Optional thought written before seeing the asker's answer.
   note      String?
   createdAt DateTime @default(now())

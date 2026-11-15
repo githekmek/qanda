@@ -117,6 +117,12 @@ test("upgrade preserves every existing user, room, invitation, answer and reacti
       options: '["A","B"]', askerAnswer: "[0,1]",
     } });
     assert.equal(newQuestion.type, "MULTIPLE_SELECT");
+    const ranking = await db.question.create({ data: {
+      roomId: room.id, askerId: a.id, type: "RANKING", text: "Reihenfolge",
+      options: '["A","B"]', askerAnswer: "[1,0]",
+    } });
+    assert.equal(ranking.type, "RANKING");
+    await db.question.delete({ where: { id: ranking.id } });
     const followUp = await db.question.create({ data: {
       roomId: room.id, askerId: b.id, type: "TEXT", text: "Sichere Folgefrage",
       askerAnswer: "Neue Antwort", parentQuestionId: question.id,

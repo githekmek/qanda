@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { answerLabels, matchingAnswerPositions, selectedPositions } from "@/lib/choiceAnswers.mjs";
+import { answerLabels, matchingAnswerPositions, samePlaces, selectedPositions } from "@/lib/choiceAnswers.mjs";
 import ReactionComment from "./ReactionComment";
 import type { PublicQuestion } from "@/types/game";
 
@@ -23,17 +23,26 @@ function AnswerRow({
   answers,
   matched,
   itemMatches,
+  ordered,
 }: {
   label: string;
   answers: string[];
   matched?: boolean;
   itemMatches?: boolean[];
+  ordered?: boolean;
 }) {
+  const check = (index: number) => itemMatches?.[index] && (
+    <span className="ml-2 text-green-600 dark:text-green-400" aria-label={ordered ? "Gleicher Platz" : "Von beiden gewählt"}>✓</span>
+  );
   return (
     <div className="flex items-baseline justify-between gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
       <div className="min-w-0 whitespace-pre-line break-words">
         <span className="font-medium text-zinc-500">{label}:</span>{" "}
-        {answers.length > 1 ? <ul className="mt-1 list-disc pl-5">{answers.map((answer, index) => <li key={index}>{answer}{itemMatches?.[index] && <span className="ml-2 text-green-600 dark:text-green-400" aria-label="Von beiden gewählt">✓</span>}</li>)}</ul> : <>{answers[0]}{itemMatches?.[0] && <span className="ml-2 text-green-600 dark:text-green-400" aria-label="Von beiden gewählt">✓</span>}</>}
+        {ordered
+          ? <ol className="mt-1 list-decimal pl-5">{answers.map((answer, index) => <li key={index}>{answer}{check(index)}</li>)}</ol>
+          : answers.length > 1
+            ? <ul className="mt-1 list-disc pl-5">{answers.map((answer, index) => <li key={index}>{answer}{check(index)}</li>)}</ul>
+            : <>{answers[0]}{check(0)}</>}
       </div>
       {matched !== undefined && (
         <span className={matched ? "text-green-600 dark:text-green-400" : "text-zinc-400"}>
@@ -57,7 +66,8 @@ function Note({ text }: { text: string | null | undefined }) {
 function AllOptions({ question }: { question: PublicQuestion }) {
   const [open, setOpen] = useState(false);
   const options = question.options;
-  if (!options || question.type === "TEXT") return null;
+  // A ranking already lists every option in both answers.
+  if (!options || question.type === "TEXT" || question.type === "RANKING") return null;
   const count = options.length;
   const asker = new Set(selectedPositions(question.type, question.askerAnswer, count));
   const responder = new Set(selectedPositions(question.type, question.answer?.value, count));
@@ -261,7 +271,7 @@ export default function HistoryFeed({
           >
             <div className="flex items-center justify-between">
               <span className="text-xs uppercase tracking-wide text-zinc-400">
-                {q.type === "MULTIPLE_SELECT" ? "Multiple Choice · Mehrere Antworten" : q.type === "MULTIPLE_CHOICE" ? "Multiple Choice · Eine Antwort" : "Freitext"} · {formatTime(q.createdAt)}
+                {q.type === "MULTIPLE_SELECT" ? "Multiple Choice · Mehrere Antworten" : q.type === "RANKING" ? "Multiple Choice · Reihenfolge" : q.type === "MULTIPLE_CHOICE" ? "Multiple Choice · Eine Antwort" : "Freitext"} · {formatTime(q.createdAt)}
               </span>
             </div>
             {q.parentQuestion && (
@@ -276,7 +286,9 @@ export default function HistoryFeed({
               <AnswerRow
                 label={q.asker.username}
                 answers={askerAnswers}
-                itemMatches={q.type === "MULTIPLE_SELECT" ? matchingAnswerPositions(q.askerAnswer, q.answer?.value, q.options?.length ?? 0) : undefined}
+                itemMatches={q.type === "MULTIPLE_SELECT" ? matchingAnswerPositions(q.askerAnswer, q.answer?.value, q.options?.length ?? 0)
+                  : q.type === "RANKING" && q.answer ? samePlaces(q.askerAnswer, q.answer.value, q.options?.length ?? 0) : undefined}
+                ordered={q.type === "RANKING"}
                 matched={q.isMatch}
               />
               <Note text={q.askerNote} />
@@ -284,7 +296,9 @@ export default function HistoryFeed({
                 <AnswerRow
                   label={q.answer.responder.username}
                   answers={responderAnswers}
-                  itemMatches={q.type === "MULTIPLE_SELECT" ? matchingAnswerPositions(q.answer.value, q.askerAnswer, q.options?.length ?? 0) : undefined}
+                  itemMatches={q.type === "MULTIPLE_SELECT" ? matchingAnswerPositions(q.answer.value, q.askerAnswer, q.options?.length ?? 0)
+                    : q.type === "RANKING" ? samePlaces(q.answer.value, q.askerAnswer, q.options?.length ?? 0) : undefined}
+                  ordered={q.type === "RANKING"}
                   matched={q.isMatch}
                 />
               )}
